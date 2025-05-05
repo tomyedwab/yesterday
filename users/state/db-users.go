@@ -4,11 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/database"
 	"github.com/tomyedwab/yesterday/database/events"
+	"github.com/tomyedwab/yesterday/database/middleware"
 )
 
 type User struct {
@@ -103,17 +105,17 @@ func AttemptLogin(db *database.Database, username string, password string) (bool
 	return user.PasswordHash == passwordHash, user.ID, nil
 }
 
-func ChangePassword(db *database.Database, username string, password string) error {
+func ChangePassword(db *database.Database, username string, password string) (int, error) {
 	user, err := GetUser(db.GetDB(), username)
 	if err != nil {
-		return fmt.Errorf("failed to get user %s: %w", username, err)
+		return 0, fmt.Errorf("failed to get user %s: %w", username, err)
 	}
 
 	hasher := sha256.New()
 	hasher.Write([]byte(user.Salt + password))
 	passwordHash := hex.EncodeToString(hasher.Sum(nil))
 
-	return db.PublishEventCB(&UserChangedPasswordEvent{
+	return user.ID, db.PublishEventCB(&UserChangedPasswordEvent{
 		GenericEvent: events.GenericEvent{
 			Id:   0,
 			Type: "users:CHANGE_PASSWORD",
@@ -121,4 +123,25 @@ func ChangePassword(db *database.Database, username string, password string) err
 		Username:     username,
 		PasswordHash: passwordHash,
 	})
+}
+
+// --- Getters ---
+
+func GetAllUsers(db *sqlx.DB) ([]struct {
+	ID       int
+	Username string
+}, error) {
+	var users []struct {
+		ID       int
+		Username string
+	}
+	err := db.Select(&users, "SELECT id, username FROM users_v1")
+	return users, err
+}
+
+func InitUserHandlers(db *database.Database) {
+	http.HandleFunc("/api/listusers", middleware.ApplyDefault(func(w http.ResponseWriter, r *http.Request) {
+		resp, err := GetAllUsers(db.GetDB())
+		database.HandleAPIResponse(w, r, resp, err)
+	}))
 }

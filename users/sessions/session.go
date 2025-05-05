@@ -127,3 +127,9 @@ func DBDeleteExpiredSessions(db *sqlx.DB, sessionExpiry time.Duration) error {
 	}
 	return nil
 }
+
+func DBDeleteSessionsForUser(db *sqlx.DB, userID int) error {
+	fmt.Printf("Deleting sessions for user %d\n", userID)
+	_, err := db.Exec("DELETE FROM sessions WHERE user_id = $1", userID)
+	return err
+}

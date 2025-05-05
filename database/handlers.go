@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/tomyedwab/yesterday/database/events"
 	"github.com/tomyedwab/yesterday/database/middleware"
@@ -129,7 +130,8 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 		if err != nil {
 			return err
 		}
-		newEventId, err := db.CreateEvent(event, buf, "internal")
+		clientId := "internal" + time.Now().Format(time.RFC3339)
+		newEventId, err := db.CreateEvent(event, buf, clientId)
 		if err != nil {
 			return err
 		}

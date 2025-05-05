@@ -1,14 +1,13 @@
 package sessions
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/tomyedwab/yesterday/database"
+	"github.com/tomyedwab/yesterday/users/util"
 )
 
 var (
@@ -26,36 +25,15 @@ type SessionManager struct {
 	jwtSecretKey  []byte        // The secret key for JWT signing
 }
 
-func LoadJWTSecretKey(path string) ([]byte, error) {
-	key, err := os.ReadFile(path)
-	if err != nil {
-		// If the file doesn't exist, generate a new key
-		if os.IsNotExist(err) {
-			b := make([]byte, 32)
-			_, err := rand.Read(b)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate random JWT secret key: %w", err)
-			}
-			if err := os.WriteFile(path, b, 0600); err != nil {
-				return nil, fmt.Errorf("failed to write JWT secret key: %w", err)
-			}
-			key = b
-		} else {
-			return nil, fmt.Errorf("failed to read JWT secret key: %w", err)
-		}
-	}
-	return key, nil
-}
-
 // NewManager creates and initializes a new SessionManager.
 // It requires a SessionStore implementation and token durations.
-func NewManager(database *database.Database, accessTokenExpiry, sessionExpiry time.Duration, jwtSecretKeyPath string) (*SessionManager, error) {
+func NewManager(database *database.Database, accessTokenExpiry, sessionExpiry time.Duration) (*SessionManager, error) {
 	err := DBInit(database.GetDB())
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
 
-	jwtSecretKey, err := LoadJWTSecretKey(jwtSecretKeyPath)
+	jwtSecretKey, err := util.LoadJWTSecretKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load JWT secret key: %w", err)
 	}
@@ -114,6 +92,10 @@ func (m *SessionManager) GetSessionByRefreshToken(refreshToken string) (*Session
 	return session, nil
 }
 
+func (m *SessionManager) DeleteSessionsForUser(userID int) error {
+	return DBDeleteSessionsForUser(m.database.GetDB(), userID)
+}
+
 // Delete sessions that have been inactive for a while
 func (m *SessionManager) DeleteExpiredSessions() error {
 	return DBDeleteExpiredSessions(m.database.GetDB(), m.sessionExpiry)
@@ -136,12 +118,12 @@ func (m *SessionManager) RefreshAccessToken(session *Session, refreshToken, appl
 	expiresAt := time.Now().UTC().Add(m.accessExpiry)
 
 	// Create the JWT claims
-	claims := jwt.MapClaims{
-		"session_id": session.ID,
-		"exp":        expiresAt.Unix(),
-		"iat":        time.Now().UTC().Unix(),
-		"app":        applicationName,
-		"pro":        profileData,
+	claims := util.YesterdayUserClaims{
+		SessionID:   session.ID,
+		Expiry:      expiresAt.Unix(),
+		IssuedAt:    time.Now().UTC().Unix(),
+		Application: applicationName,
+		Profile:     profileData,
 	}
 
 	// Create the token with claims

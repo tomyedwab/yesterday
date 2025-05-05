@@ -10,9 +10,11 @@ import (
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
 	"github.com/tomyedwab/yesterday/database"
+	"github.com/tomyedwab/yesterday/database/middleware"
 	"github.com/tomyedwab/yesterday/users/auth"
 	"github.com/tomyedwab/yesterday/users/sessions"
 	"github.com/tomyedwab/yesterday/users/state"
+	"github.com/tomyedwab/yesterday/users/util"
 )
 
 type ChangePasswordRequest struct {
@@ -23,79 +25,91 @@ type ChangePasswordRequest struct {
 func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.SessionManager) {
 	// Endpoints used during authentication flow
 
-	LoginHandler := func(w http.ResponseWriter, r *http.Request) {
-		var loginRequest auth.LoginRequest
-		err := json.NewDecoder(r.Body).Decode(&loginRequest)
-		if err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
+	LoginHandler := middleware.Chain(
+		func(w http.ResponseWriter, r *http.Request) {
+			var loginRequest auth.LoginRequest
+			err := json.NewDecoder(r.Body).Decode(&loginRequest)
+			if err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
 
-		refreshToken, err := auth.DoLogin(db, sessionManager, loginRequest)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
+			refreshToken, err := auth.DoLogin(db, sessionManager, loginRequest)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
 
-		// Set the refresh token in a cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:     "YRT",
-			Value:    refreshToken,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
-		})
-		w.WriteHeader(http.StatusOK)
-	}
+			// Set the refresh token in a cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:     "YRT",
+				Value:    refreshToken,
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteLaxMode,
+			})
+			w.WriteHeader(http.StatusOK)
+		},
+		middleware.EnableCrossOrigin,
+		middleware.LogRequests,
+	)
 
-	RefreshHandler := func(w http.ResponseWriter, r *http.Request) {
-		var refreshRequest auth.RefreshRequest
-		err := json.NewDecoder(r.Body).Decode(&refreshRequest)
-		if err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
+	RefreshHandler := middleware.Chain(
+		func(w http.ResponseWriter, r *http.Request) {
+			var refreshRequest auth.RefreshRequest
+			err := json.NewDecoder(r.Body).Decode(&refreshRequest)
+			if err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
 
-		response, err := auth.DoRefresh(db, sessionManager, refreshRequest)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
+			response, err := auth.DoRefresh(db, sessionManager, refreshRequest)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
 
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
-			return
-		}
+			responseJson, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
+				return
+			}
 
-		w.WriteHeader(http.StatusOK)
-		w.Write(responseJson)
-	}
+			w.WriteHeader(http.StatusOK)
+			w.Write(responseJson)
+		},
+		middleware.EnableCrossOrigin,
+		middleware.LogRequests,
+	)
 
-	LogoutHandler := func(w http.ResponseWriter, r *http.Request) {
-		// Get refresh token from cookie
-		refreshToken, err := r.Cookie("YRT")
-		if err != nil {
-			http.Error(w, "No refresh token found", http.StatusUnauthorized)
-			return
-		}
+	LogoutHandler := middleware.Chain(
+		func(w http.ResponseWriter, r *http.Request) {
+			// Get refresh token from cookie
+			refreshToken, err := r.Cookie("YRT")
+			if err != nil {
+				http.Error(w, "No refresh token found", http.StatusUnauthorized)
+				return
+			}
 
-		err = auth.DoLogout(db, sessionManager, refreshToken.Value)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
-		}
+			err = auth.DoLogout(db, sessionManager, refreshToken.Value)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
 
-		// Clear the YRT cookie
-		http.SetCookie(w, &http.Cookie{
-			Name:   "YRT",
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
-		w.WriteHeader(http.StatusOK)
-	}
+			// Clear the YRT cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:   "YRT",
+				Value:  "",
+				Path:   "/",
+				MaxAge: -1,
+			})
+			w.WriteHeader(http.StatusOK)
+		},
+		middleware.EnableCrossOrigin,
+		middleware.LogRequests,
+	)
 
 	http.HandleFunc("/api/login", LoginHandler)
 	http.HandleFunc("/api/refresh", RefreshHandler)
@@ -105,23 +119,42 @@ func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.Sessio
 func RegisterAdminHandlers(db *database.Database, sessionManager *sessions.SessionManager) {
 	// Endpoint used by an admin to change user password
 
-	ChangePasswordHandler := func(w http.ResponseWriter, r *http.Request) {
-		// TODO STOPSHIP: User has to be authenticated and an admin to do this
-		var changePasswordRequest ChangePasswordRequest
-		err := json.NewDecoder(r.Body).Decode(&changePasswordRequest)
-		if err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
+	ChangePasswordHandler := middleware.Chain(
+		func(w http.ResponseWriter, r *http.Request) {
+			claims := r.Context().Value("claims").(*util.YesterdayUserClaims)
+			var profileData map[string]interface{}
+			err := json.Unmarshal([]byte(claims.Profile), &profileData)
+			if err != nil {
+				http.Error(w, "Failed to unmarshal profile data", http.StatusInternalServerError)
+				return
+			}
 
-		err = state.ChangePassword(db, changePasswordRequest.Username, changePasswordRequest.Password)
-		if err != nil {
-			http.Error(w, "Failed to change password", http.StatusInternalServerError)
-			return
-		}
+			if profileData["admin"] != true {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
 
-		w.WriteHeader(http.StatusOK)
-	}
+			var changePasswordRequest ChangePasswordRequest
+			err = json.NewDecoder(r.Body).Decode(&changePasswordRequest)
+			if err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			userID, err := state.ChangePassword(db, changePasswordRequest.Username, changePasswordRequest.Password)
+			if err != nil {
+				http.Error(w, "Failed to change password", http.StatusInternalServerError)
+				return
+			}
+
+			sessionManager.DeleteSessionsForUser(userID)
+
+			w.WriteHeader(http.StatusOK)
+		},
+		middleware.LoginRequired,
+		middleware.EnableCrossOrigin,
+		middleware.LogRequests,
+	)
 
 	http.HandleFunc("/api/changepw", ChangePasswordHandler)
 }
@@ -142,13 +175,16 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	sessionManager, err := sessions.NewManager(db, 5*time.Minute, 30*24*time.Hour, "./jwt_secret.key")
+	sessionManager, err := sessions.NewManager(db, 5*time.Minute, 30*24*time.Hour)
 	if err != nil {
 		log.Fatalf("Failed to create session manager: %v", err)
 	}
 
 	// Initialize HTTP endpoints using our event mapper
 	db.InitHandlers(state.MapUserEventType)
+
+	state.InitUserHandlers(db)
+	state.InitUserProfileHandlers(db)
 
 	// Register auth endpoints
 	RegisterAuthHandlers(db, sessionManager)

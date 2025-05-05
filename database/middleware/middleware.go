@@ -1,11 +1,52 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/tomyedwab/yesterday/users/util"
 )
+
+func LoginRequired(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get bearer token from request
+		token := r.Header.Get("Authorization")
+		if token == "" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if !strings.HasPrefix(token, "Bearer ") {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Decode JWT token
+		var claimValue util.YesterdayUserClaims
+		tokenString := strings.TrimPrefix(token, "Bearer ")
+		claims, err := jwt.ParseWithClaims(tokenString, &claimValue, func(token *jwt.Token) (interface{}, error) {
+			return util.LoadJWTSecretKey()
+		})
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Check if the token is valid
+		if !claims.Valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		nextRequest := r.WithContext(context.WithValue(r.Context(), "claims", &claimValue))
+
+		next.ServeHTTP(w, nextRequest)
+	}
+}
 
 func LogRequests(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +101,7 @@ func Chain(h http.HandlerFunc, middleware ...func(http.HandlerFunc) http.Handler
 func ApplyDefault(h http.HandlerFunc) http.HandlerFunc {
 	return Chain(
 		h,
+		LoginRequired,
 		EnableCrossOrigin,
 		LogRequests,
 	)

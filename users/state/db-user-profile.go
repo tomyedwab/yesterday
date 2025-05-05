@@ -1,10 +1,15 @@
 package state
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/database"
 	"github.com/tomyedwab/yesterday/database/events"
+	"github.com/tomyedwab/yesterday/database/middleware"
 )
 
 // --- Event Types ---
@@ -71,4 +76,29 @@ func GetUserProfile(db *sqlx.DB, userID int, applicationName string) (string, er
 		return "{}", nil
 	}
 	return profileData, nil
+}
+
+func InitUserProfileHandlers(db *database.Database) {
+	http.HandleFunc("/api/getuserprofile", middleware.ApplyDefault(func(w http.ResponseWriter, r *http.Request) {
+		userId, err := strconv.Atoi(r.URL.Query().Get("userId"))
+		if err != nil {
+			http.Error(w, "Invalid user ID", http.StatusBadRequest)
+			return
+		}
+		applicationName := r.URL.Query().Get("application")
+		profile, err := GetUserProfile(db.GetDB(), userId, applicationName)
+		if err != nil {
+			http.Error(w, "Failed to get profile", http.StatusInternalServerError)
+			return
+		}
+
+		var profileParsed map[string]interface{}
+		err = json.Unmarshal([]byte(profile), &profileParsed)
+		if err != nil {
+			profileParsed = map[string]interface{}{
+				"_value": profile,
+			}
+		}
+		database.HandleAPIResponse(w, r, map[string]interface{}{"userId": userId, "application": applicationName, "profile": profileParsed}, err)
+	}))
 }

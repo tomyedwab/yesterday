@@ -35,6 +35,7 @@ type Database struct {
 	latestVersions map[string]int
 	handlers       map[string]EventUpdateHandler
 	version        string
+	PublishEventCB func(event events.Event) error
 }
 
 // Connect creates a new database connection and initializes the database

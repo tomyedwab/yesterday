@@ -88,10 +88,12 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 			buf, err := io.ReadAll(r.Body)
 			if err != nil {
 				HandleAPIResponse(w, r, nil, err)
+				return
 			}
 			event, err := events.ParseEvent(buf, mapper)
 			if err != nil {
 				HandleAPIResponse(w, r, nil, err)
+				return
 			}
 
 			newEventId, err := db.CreateEvent(event, buf, clientId)
@@ -120,5 +122,19 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 			}, nil)
 		},
 	))
+
+	// Special case for internally-generated events
+	db.PublishEventCB = func(event events.Event) error {
+		buf, err := json.Marshal(event)
+		if err != nil {
+			return err
+		}
+		newEventId, err := db.CreateEvent(event, buf, "internal")
+		if err != nil {
+			return err
+		}
+		eventState.SetCurrentEventId(newEventId)
+		return nil
+	}
 
 }

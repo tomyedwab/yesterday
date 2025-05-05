@@ -47,7 +47,8 @@ func myEventHandler(tx *sqlx.Tx, event events.Event) (bool, error) {
 	fmt.Printf("Handler received event ID: %d, Type: %s\n", event.GetId(), event.GetType())
 
 	// On initial DB setup, create our state table
-	if _, ok := event.(*events.DBInitEvent); ok {
+	switch evt := event.(type) {
+	case *events.DBInitEvent:
 		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS my_state (last_payload TEXT)`)
 		if err != nil {
 			return false, fmt.Errorf("failed to create my_state table: %w", err)
@@ -55,19 +56,15 @@ func myEventHandler(tx *sqlx.Tx, event events.Event) (bool, error) {
 		// Insert initial empty state if needed
 		_, err = tx.Exec(`INSERT INTO my_state (last_payload) SELECT '' WHERE NOT EXISTS (SELECT 1 FROM my_state)`)
 		return true, err // Indicate state was potentially modified (table created)
-	}
 
-	// Process our specific event type
-	if myEvent, ok := event.(*MyEvent); ok {
-		if myEvent.GetType() == "MY_EVENT" {
-			fmt.Printf("Processing MY_EVENT with payload: %s\n", myEvent.Payload)
-			// Update our application state table
-			_, err := tx.Exec(`UPDATE my_state SET last_payload = $1`, myEvent.Payload)
-			if err != nil {
-				return false, fmt.Errorf("failed to update my_state: %w", err)
-			}
-			return true, nil // Indicate state was modified
-		}
+    case *MyEvent:
+        fmt.Printf("Processing MyEvent with payload: %s\n", evt.Payload)
+        // Update our application state table
+        _, err := tx.Exec(`UPDATE my_state SET last_payload = $1`, evt.Payload)
+        if err != nil {
+            return false, fmt.Errorf("failed to update my_state: %w", err)
+        }
+        return true, nil // Indicate state was modified
 	}
 
 	// Event was not relevant to this handler, state not modified
@@ -98,7 +95,7 @@ func main() {
 
 	// Define handlers
 	handlers := map[string]database.EventUpdateHandler{
-		"myStateBuilder": myEventHandler,
+		"mystate_v1": myEventHandler,
 		// Add more handlers for different state representations if needed
 	}
 
@@ -112,8 +109,6 @@ func main() {
 	db.InitHandlers(mapEventType)
 
 	fmt.Println("Database initialized. Starting server on :8080")
-	fmt.Println("Try: curl -X POST -H 'Content-Type: application/json' -d '{\"type\": \"MY_EVENT\", \"payload\": \"hello world\"}' 'http://localhost:8080/api/publish?cid=client123'")
-	fmt.Println("Then: curl 'http://localhost:8080/api/poll?e=1'") // Poll for event 1
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

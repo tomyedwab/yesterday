@@ -10,130 +10,59 @@ import (
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
 	"github.com/tomyedwab/yesterday/database"
+	"github.com/tomyedwab/yesterday/users/auth"
 	"github.com/tomyedwab/yesterday/users/sessions"
 	"github.com/tomyedwab/yesterday/users/state"
 )
-
-type LoginRequest struct {
-	Username        string `json:"username"`
-	Password        string `json:"password"`
-	ApplicationName string `json:"application"`
-}
-
-type LoginResponse struct {
-	RefreshToken string `json:"refresh_token"`
-	AccessToken  string `json:"access_token"`
-}
 
 type ChangePasswordRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-type RefreshRequest struct {
-	SessionID       string `json:"session_id"`
-	RefreshToken    string `json:"refresh_token"`
-	ApplicationName string `json:"application"`
-}
-
-type RefreshResponse struct {
-	RefreshToken string `json:"refresh_token"`
-	AccessToken  string `json:"access_token"`
-}
-
-type LogoutRequest struct {
-	SessionID    string `json:"session_id"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-func RegisterLoginHandlers(db *database.Database, sessionManager *sessions.SessionManager) {
+func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.SessionManager) {
 	// Endpoints used during authentication flow
 
 	LoginHandler := func(w http.ResponseWriter, r *http.Request) {
-		var loginRequest LoginRequest
+		var loginRequest auth.LoginRequest
 		err := json.NewDecoder(r.Body).Decode(&loginRequest)
 		if err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		if loginRequest.ApplicationName == "" {
-			http.Error(w, "Application name is required", http.StatusBadRequest)
-			return
-		}
-
-		success, userId, err := state.AttemptLogin(db, loginRequest.Username, loginRequest.Password)
+		refreshToken, err := auth.DoLogin(db, sessionManager, loginRequest)
 		if err != nil {
-			http.Error(w, "Invalid username or password", http.StatusUnauthorized)
-			return
-		}
-		if !success {
-			http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 
-		profile, err := state.GetUserProfile(db.GetDB(), userId, loginRequest.ApplicationName)
-		if err != nil {
-			http.Error(w, "Failed to get user profile", http.StatusInternalServerError)
-			return
-		}
-
-		session, err := sessionManager.CreateSession(userId)
-		if err != nil {
-			http.Error(w, "Failed to create session", http.StatusInternalServerError)
-			return
-		}
-
-		accessToken, refreshToken, err := sessionManager.RefreshAccessToken(session, "", loginRequest.ApplicationName, profile)
-		if err != nil {
-			http.Error(w, "Failed to refresh access token", http.StatusInternalServerError)
-			return
-		}
-
-		response := LoginResponse{
-			RefreshToken: refreshToken,
-			AccessToken:  accessToken,
-		}
-		responseJson, err := json.Marshal(response)
-		if err != nil {
-			http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
-			return
-		}
-
+		// Set the refresh token in a cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "YRT",
+			Value:    refreshToken,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
 		w.WriteHeader(http.StatusOK)
-		w.Write(responseJson)
 	}
 
 	RefreshHandler := func(w http.ResponseWriter, r *http.Request) {
-		var refreshRequest RefreshRequest
+		var refreshRequest auth.RefreshRequest
 		err := json.NewDecoder(r.Body).Decode(&refreshRequest)
 		if err != nil {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
 
-		session, err := sessionManager.GetSession(refreshRequest.SessionID)
+		response, err := auth.DoRefresh(db, sessionManager, refreshRequest)
 		if err != nil {
-			http.Error(w, "Failed to get session", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 
-		profile, err := state.GetUserProfile(db.GetDB(), session.UserID, refreshRequest.ApplicationName)
-		if err != nil {
-			http.Error(w, "Failed to get user profile", http.StatusInternalServerError)
-			return
-		}
-
-		accessToken, refreshToken, err := sessionManager.RefreshAccessToken(session, refreshRequest.RefreshToken, refreshRequest.ApplicationName, profile)
-		if err != nil {
-			http.Error(w, "Failed to refresh access token", http.StatusInternalServerError)
-			return
-		}
-
-		response := RefreshResponse{
-			RefreshToken: refreshToken,
-			AccessToken:  accessToken,
-		}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
 			http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
@@ -145,38 +74,36 @@ func RegisterLoginHandlers(db *database.Database, sessionManager *sessions.Sessi
 	}
 
 	LogoutHandler := func(w http.ResponseWriter, r *http.Request) {
-		var logoutRequest LogoutRequest
-		err := json.NewDecoder(r.Body).Decode(&logoutRequest)
+		// Get refresh token from cookie
+		refreshToken, err := r.Cookie("YRT")
 		if err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			http.Error(w, "No refresh token found", http.StatusUnauthorized)
 			return
 		}
 
-		session, err := sessionManager.GetSession(logoutRequest.SessionID)
+		err = auth.DoLogout(db, sessionManager, refreshToken.Value)
 		if err != nil {
-			http.Error(w, "Failed to get session", http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 
-		if session.RefreshToken != logoutRequest.RefreshToken {
-			http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
-			return
-		}
-
-		err = session.DBDelete(db.GetDB())
-		if err != nil {
-			http.Error(w, "Failed to delete session", http.StatusInternalServerError)
-			return
-		}
-
+		// Clear the YRT cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:   "YRT",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
 		w.WriteHeader(http.StatusOK)
 	}
 
-	http.HandleFunc("/login", LoginHandler)
-	http.HandleFunc("/refresh", RefreshHandler)
-	http.HandleFunc("/logout", LogoutHandler)
+	http.HandleFunc("/api/login", LoginHandler)
+	http.HandleFunc("/api/refresh", RefreshHandler)
+	http.HandleFunc("/api/logout", LogoutHandler)
+}
 
-	// Endpoints used by an admin to change user password
+func RegisterAdminHandlers(db *database.Database, sessionManager *sessions.SessionManager) {
+	// Endpoint used by an admin to change user password
 
 	ChangePasswordHandler := func(w http.ResponseWriter, r *http.Request) {
 		// TODO STOPSHIP: User has to be authenticated and an admin to do this
@@ -196,7 +123,7 @@ func RegisterLoginHandlers(db *database.Database, sessionManager *sessions.Sessi
 		w.WriteHeader(http.StatusOK)
 	}
 
-	http.HandleFunc("/changepw", ChangePasswordHandler)
+	http.HandleFunc("/api/changepw", ChangePasswordHandler)
 }
 
 func main() {
@@ -223,8 +150,15 @@ func main() {
 	// Initialize HTTP endpoints using our event mapper
 	db.InitHandlers(state.MapUserEventType)
 
-	// Register login endpoints
-	RegisterLoginHandlers(db, sessionManager)
+	// Register auth endpoints
+	RegisterAuthHandlers(db, sessionManager)
+
+	// Register admin endpoints
+	RegisterAdminHandlers(db, sessionManager)
+
+	// Serve static files from the `www` directory
+	fs := http.FileServer(http.Dir("./www"))
+	http.Handle("/", fs)
 
 	// Once every 10 minutes, delete expired sessions
 	go func() {

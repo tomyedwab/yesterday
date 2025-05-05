@@ -22,12 +22,15 @@ type Session struct {
 }
 
 // NewSession creates a new session instance with a unique ID.
-func NewSession(userID int) *Session {
+func NewSession(userID int) (*Session, error) {
 	sessionID, err := generateRandomID(16) // Generate a 16-byte random ID
 	if err != nil {
-		// In a real app, handle this more gracefully than panicking.
-		// Maybe return the error or use a fallback.
-		panic(err)
+		return nil, err
+	}
+
+	refreshToken, err := generateRandomID(32)
+	if err != nil {
+		return nil, err
 	}
 
 	now := time.Now().UTC()
@@ -36,7 +39,8 @@ func NewSession(userID int) *Session {
 		UserID:        userID,
 		CreatedAt:     now,
 		LastRefreshed: now,
-	}
+		RefreshToken:  refreshToken,
+	}, nil
 }
 
 // generateRandomID generates a cryptographically secure random string encoded in base64.
@@ -73,6 +77,12 @@ func DBInit(db *sqlx.DB) error {
 func DBGetSessionByID(db *sqlx.DB, id string) (*Session, error) {
 	var s Session
 	err := db.Get(&s, "SELECT * FROM sessions WHERE id = $1", id)
+	return &s, err
+}
+
+func DBGetSessionByRefreshToken(db *sqlx.DB, refreshToken string) (*Session, error) {
+	var s Session
+	err := db.Get(&s, "SELECT * FROM sessions WHERE refresh_token = $1", refreshToken)
 	return &s, err
 }
 

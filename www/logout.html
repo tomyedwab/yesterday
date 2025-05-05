@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tomyedwab.com logout</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f4f4f4; }
+        form { background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        label { display: block; margin-bottom: 0.5rem; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; padding: 0.7rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        .error { color: red; margin-top: 1rem; text-align: center; }
+    </style>
+</head>
+<body>
+    <form id="loginForm">
+        <h2>tomyedwab.com logout</h2>
+        <p id="errorMessage" class="error" style="display: none;"></p>
+    </form>
+    <script>
+        // Call the /api/logout endpoint
+        fetch('/api/logout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => {
+            if (!response.ok) { // Check if status code is 200-299
+                throw new Error(`Logout failed`);
+            }
+            // Logout successful - proceed with redirection
+            const urlParams = new URLSearchParams(window.location.search);
+            const continueUrl = urlParams.get('continue');
+
+            if (continueUrl) {
+                // TODO: Validate the continue URL is valid
+                try {
+                    const url = new URL(continueUrl, window.location.origin);
+                    window.setTimeout(() => {
+                        window.location.href = url.href; // Redirect
+                    }, 5000);
+                } catch (e) {
+                    console.error('Invalid continue URL:', continueUrl, e);
+                    errorMessage.textContent = 'Invalid redirect URL specified.';
+                    errorMessage.style.display = 'block';
+                }
+            } else {
+                // Default redirect if 'continue' is not provided
+                window.location.href = '/';
+            }
+        })
+        .catch(error => {
+            // Handle login errors (API call failed or credentials incorrect)
+            console.error('Logout error:', error);
+            errorMessage.textContent = error.message || 'An error occurred during logout.';
+            errorMessage.style.display = 'block';
+        });
+    </script>
+</body>
+</html>
+

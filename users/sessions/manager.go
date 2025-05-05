@@ -78,7 +78,10 @@ func NewManager(database *database.Database, accessTokenExpiry, sessionExpiry ti
 // 3. Stores the session details in the SessionStore (database).
 // Returns the new session or an error.
 func (m *SessionManager) CreateSession(userID int) (*Session, error) {
-	session := NewSession(userID)
+	session, err := NewSession(userID)
+	if err != nil {
+		return nil, err
+	}
 
 	// Store the session in the database
 	if err := session.DBCreate(m.database.GetDB()); err != nil {
@@ -100,6 +103,14 @@ func (m *SessionManager) GetSession(sessionID string) (*Session, error) {
 		return nil, ErrSessionExpired
 	}
 
+	return session, nil
+}
+
+func (m *SessionManager) GetSessionByRefreshToken(refreshToken string) (*Session, error) {
+	session, err := DBGetSessionByRefreshToken(m.database.GetDB(), refreshToken)
+	if err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 

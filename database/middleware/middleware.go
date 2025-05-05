@@ -42,7 +42,7 @@ func LoginRequired(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		nextRequest := r.WithContext(context.WithValue(r.Context(), "claims", &claimValue))
+		nextRequest := r.WithContext(context.WithValue(r.Context(), util.ClaimsKey, &claimValue))
 
 		next.ServeHTTP(w, nextRequest)
 	}

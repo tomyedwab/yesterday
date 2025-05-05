@@ -121,7 +121,7 @@ func RegisterAdminHandlers(db *database.Database, sessionManager *sessions.Sessi
 
 	ChangePasswordHandler := middleware.Chain(
 		func(w http.ResponseWriter, r *http.Request) {
-			claims := r.Context().Value("claims").(*util.YesterdayUserClaims)
+			claims := r.Context().Value(util.ClaimsKey).(*util.YesterdayUserClaims)
 			var profileData map[string]interface{}
 			err := json.Unmarshal([]byte(claims.Profile), &profileData)
 			if err != nil {

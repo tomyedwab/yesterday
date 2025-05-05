@@ -6,6 +6,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type contextKey string
+
+const ClaimsKey contextKey = "claims"
+
 type YesterdayUserClaims struct {
 	jwt.Claims
 	SessionID   string `json:"session_id"`

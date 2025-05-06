@@ -10,6 +10,7 @@ import (
 
 	"github.com/tomyedwab/yesterday/database/events"
 	"github.com/tomyedwab/yesterday/database/middleware"
+	"github.com/tomyedwab/yesterday/users/util"
 )
 
 func waitForEventId(w http.ResponseWriter, r *http.Request, eventState *events.EventState) bool {
@@ -120,6 +121,21 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 			HandleAPIResponse(w, r, map[string]interface{}{
 				"id":      eventState.CurrentEventId,
 				"version": db.version,
+			}, nil)
+		},
+	))
+
+	http.HandleFunc("/api/profile", middleware.ApplyDefault(
+		func(w http.ResponseWriter, r *http.Request) {
+			claims := r.Context().Value(util.ClaimsKey).(*util.YesterdayUserClaims)
+			var profileData map[string]interface{}
+			err := json.Unmarshal([]byte(claims.Profile), &profileData)
+			if err != nil {
+				http.Error(w, "Failed to unmarshal profile data", http.StatusInternalServerError)
+				return
+			}
+			HandleAPIResponse(w, r, map[string]interface{}{
+				"profile": profileData,
 			}, nil)
 		},
 	))

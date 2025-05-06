@@ -75,8 +75,9 @@ func EnableCrossOrigin(next http.HandlerFunc) http.HandlerFunc {
 				r.Method,
 				r.URL.Path,
 			)
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Origin", "https://99pennies.tomyedwab.localhost") // TODO: Make this configurable
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
 		if r.Method == "OPTIONS" {

@@ -95,8 +95,8 @@ func getAccessToken() (string, error) {
 		}
 	}
 
-	var body []byte
-	for i := 0; i < 2; i++ {
+	var resp *http.Response
+	for range 2 {
 		if err != nil {
 			refreshToken, err = doLogin()
 			if err != nil {
@@ -104,27 +104,43 @@ func getAccessToken() (string, error) {
 			}
 		}
 		reqBody := map[string]string{
-			"refresh_token": refreshToken,
-			"application":   "users",
+			"application": "users",
 		}
 		reqJson, _ := json.Marshal(reqBody)
-		body, err = runRequest(userServiceURL+"/api/refresh", "POST", reqJson, "")
+		req, err := http.NewRequest("POST", userServiceURL+"/api/refresh", bytes.NewBuffer(reqJson))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Cookie", "YRT="+refreshToken)
+		resp, err = http.DefaultClient.Do(req)
 		if err == nil {
 			break
 		}
+		resp.Body.Close()
 	}
 
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
+
+	// Read the refresh token from the response cookie
+	cookies := resp.Cookies()
+	for _, cookie := range cookies {
+		if cookie.Name == "YRT" {
+			os.WriteFile("refresh_token.txt", []byte(cookie.Value), 0644)
+		}
+	}
 
 	var refreshResponse auth.RefreshResponse
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
 	err = json.Unmarshal(body, &refreshResponse)
 	if err != nil {
 		return "", err
 	}
-
-	os.WriteFile("refresh_token.txt", []byte(refreshResponse.RefreshToken), 0644)
 
 	return refreshResponse.AccessToken, nil
 }

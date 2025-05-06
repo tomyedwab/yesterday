@@ -41,7 +41,7 @@
                     const url = new URL(continueUrl, window.location.origin);
                     window.setTimeout(() => {
                         window.location.href = url.href; // Redirect
-                    }, 5000);
+                    }, 500);
                 } catch (e) {
                     console.error('Invalid continue URL:', continueUrl, e);
                     errorMessage.textContent = 'Invalid redirect URL specified.';

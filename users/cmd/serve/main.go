@@ -44,12 +44,14 @@ func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.Sessio
 			http.SetCookie(w, &http.Cookie{
 				Name:     "YRT",
 				Value:    refreshToken,
+				Domain:   "login.tomyedwab.localhost", // TODO: Make this configurable
 				Path:     "/",
 				HttpOnly: true,
 				Secure:   true,
-				SameSite: http.SameSiteLaxMode,
+				SameSite: http.SameSiteNoneMode,
 			})
 			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Logged in"))
 		},
 		middleware.EnableCrossOrigin,
 		middleware.LogRequests,
@@ -57,14 +59,21 @@ func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.Sessio
 
 	RefreshHandler := middleware.Chain(
 		func(w http.ResponseWriter, r *http.Request) {
+			// Get refresh token from cookie
+			refreshToken, err := r.Cookie("YRT")
+			if err != nil {
+				http.Error(w, "No refresh token found", http.StatusUnauthorized)
+				return
+			}
+
 			var refreshRequest auth.RefreshRequest
-			err := json.NewDecoder(r.Body).Decode(&refreshRequest)
+			err = json.NewDecoder(r.Body).Decode(&refreshRequest)
 			if err != nil {
 				http.Error(w, "Invalid request body", http.StatusBadRequest)
 				return
 			}
 
-			response, err := auth.DoRefresh(db, sessionManager, refreshRequest)
+			response, newRefreshToken, err := auth.DoRefresh(db, sessionManager, refreshToken.Value, refreshRequest)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusUnauthorized)
 				return
@@ -76,6 +85,16 @@ func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.Sessio
 				return
 			}
 
+			// Set the refresh token in a cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:     "YRT",
+				Value:    newRefreshToken,
+				Domain:   "login.tomyedwab.localhost", // TODO: Make this configurable
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteNoneMode,
+			})
 			w.WriteHeader(http.StatusOK)
 			w.Write(responseJson)
 		},
@@ -100,12 +119,17 @@ func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.Sessio
 
 			// Clear the YRT cookie
 			http.SetCookie(w, &http.Cookie{
-				Name:   "YRT",
-				Value:  "",
-				Path:   "/",
-				MaxAge: -1,
+				Name:     "YRT",
+				Value:    "",
+				Domain:   "",
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteNoneMode,
+				MaxAge:   -1,
 			})
 			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Logged out"))
 		},
 		middleware.EnableCrossOrigin,
 		middleware.LogRequests,

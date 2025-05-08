@@ -31,26 +31,9 @@
             if (!response.ok) { // Check if status code is 200-299
                 throw new Error(`Logout failed`);
             }
-            // Logout successful - proceed with redirection
-            const urlParams = new URLSearchParams(window.location.search);
-            const continueUrl = urlParams.get('continue');
-
-            if (continueUrl) {
-                // TODO: Validate the continue URL is valid
-                try {
-                    const url = new URL(continueUrl, window.location.origin);
-                    window.setTimeout(() => {
-                        window.location.href = url.href; // Redirect
-                    }, 500);
-                } catch (e) {
-                    console.error('Invalid continue URL:', continueUrl, e);
-                    errorMessage.textContent = 'Invalid redirect URL specified.';
-                    errorMessage.style.display = 'block';
-                }
-            } else {
-                // Default redirect if 'continue' is not provided
-                window.location.href = '/';
-            }
+            // Logout successful
+            errorMessage.textContent = 'Logged out successfully.';
+            errorMessage.style.display = 'block';
         })
         .catch(error => {
             // Handle login errors (API call failed or credentials incorrect)

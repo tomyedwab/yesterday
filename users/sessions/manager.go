@@ -55,8 +55,8 @@ func NewManager(database *database.Database, accessTokenExpiry, sessionExpiry ti
 // 2. Generates a refresh token.
 // 3. Stores the session details in the SessionStore (database).
 // Returns the new session or an error.
-func (m *SessionManager) CreateSession(userID int) (*Session, error) {
-	session, err := NewSession(userID)
+func (m *SessionManager) CreateSession(userID int, applicationID string) (*Session, error) {
+	session, err := NewSession(userID, applicationID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (m *SessionManager) DeleteExpiredSessions() error {
 // RefreshAccessToken creates a new JWT access token and updates the session
 // with a new refresh token. It returns the access and refresh tokens, or an
 // error.
-func (m *SessionManager) RefreshAccessToken(session *Session, refreshToken, applicationName, profileData string) (string, string, error) {
+func (m *SessionManager) RefreshAccessToken(session *Session, refreshToken, applicationID, profileData string) (string, string, error) {
 	if session.RefreshToken != refreshToken {
 		return "", "", ErrInvalidRefreshToken
 	}
@@ -122,7 +122,7 @@ func (m *SessionManager) RefreshAccessToken(session *Session, refreshToken, appl
 		SessionID:   session.ID,
 		Expiry:      expiresAt.Unix(),
 		IssuedAt:    time.Now().UTC().Unix(),
-		Application: applicationName,
+		Application: applicationID,
 		Profile:     profileData,
 	}
 

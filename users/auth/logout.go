@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/tomyedwab/yesterday/database"
 	"github.com/tomyedwab/yesterday/users/sessions"
@@ -10,12 +10,12 @@ import (
 func DoLogout(db *database.Database, sessionManager *sessions.SessionManager, refreshToken string) error {
 	session, err := sessionManager.GetSessionByRefreshToken(refreshToken)
 	if err != nil {
-		return errors.New("failed to get session")
+		return fmt.Errorf("failed to get session: %v", err)
 	}
 
 	err = session.DBDelete(db.GetDB())
 	if err != nil {
-		return errors.New("failed to delete session")
+		return fmt.Errorf("failed to delete session: %v", err)
 	}
 
 	return nil

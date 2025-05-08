@@ -49,6 +49,12 @@ func UserStateHandler(tx *sqlx.Tx, event events.Event) (bool, error) {
 
 	switch evt := event.(type) {
 	case *events.DBInitEvent:
+		// Generate a random salt for the admin user
+		salt := uuid.New().String()
+		hasher := sha256.New()
+		hasher.Write([]byte(salt + "admin"))
+		passwordHash := hex.EncodeToString(hasher.Sum(nil))
+
 		// Create users table
 		_, err := tx.Exec(`
 			CREATE TABLE IF NOT EXISTS users_v1 (
@@ -59,6 +65,17 @@ func UserStateHandler(tx *sqlx.Tx, event events.Event) (bool, error) {
 			)`)
 		if err != nil {
 			return false, fmt.Errorf("failed to create users table: %w", err)
+		}
+
+		// Create admin user if it doesn't exist
+		_, err = tx.Exec(`
+			INSERT INTO users_v1 (username, salt, password_hash)
+			SELECT 'admin', $1, $2
+			WHERE NOT EXISTS (
+				SELECT 1 FROM users_v1 WHERE username = 'admin'
+			)`, salt, passwordHash)
+		if err != nil {
+			return false, fmt.Errorf("failed to create admin user: %w", err)
 		}
 		fmt.Println("User tables initialized (if not exists).")
 		return true, nil

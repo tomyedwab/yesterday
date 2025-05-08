@@ -34,6 +34,30 @@ func MapUserEventType(rawMessage *json.RawMessage, generic *events.GenericEvent)
 		specificEvent.GenericEvent = *generic // Copy generic fields
 		return &specificEvent, nil
 
+	case "users:ADD_APPLICATION":
+		var specificEvent ApplicationAddedEvent
+		if err := json.Unmarshal(*rawMessage, &specificEvent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal ApplicationAddedEvent: %w", err)
+		}
+		specificEvent.GenericEvent = *generic // Copy generic fields
+		return &specificEvent, nil
+
+	case "users:DELETE_APPLICATION":
+		var specificEvent ApplicationDeletedEvent
+		if err := json.Unmarshal(*rawMessage, &specificEvent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal ApplicationDeletedEvent: %w", err)
+		}
+		specificEvent.GenericEvent = *generic // Copy generic fields
+		return &specificEvent, nil
+
+	case "users:UPDATE_APPLICATION_HOSTNAME":
+		var specificEvent ApplicationHostNameUpdatedEvent
+		if err := json.Unmarshal(*rawMessage, &specificEvent); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal ApplicationHostNameUpdatedEvent: %w", err)
+		}
+		specificEvent.GenericEvent = *generic // Copy generic fields
+		return &specificEvent, nil
+
 	default:
 		// If the type isn't user-specific, return the generic event
 		// This allows other handlers (if any) to process non-user events.

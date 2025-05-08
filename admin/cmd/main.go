@@ -63,7 +63,7 @@ func doLogin() (string, error) {
 		"password": strings.TrimSpace(password),
 	}
 	reqJson, _ := json.Marshal(reqBody)
-	resp, err := http.Post(userServiceURL+"/api/login", "application/json", bytes.NewBuffer(reqJson))
+	resp, err := http.Post(userServiceURL+"/api/login?app=0001-0001", "application/json", bytes.NewBuffer(reqJson))
 	if err != nil {
 		return "", err
 	}
@@ -96,33 +96,35 @@ func getAccessToken() (string, error) {
 	}
 
 	var resp *http.Response
-	for range 2 {
+	for i := 0; i < 2; i++ {
+		req, err := http.NewRequest("POST", userServiceURL+"/api/refresh", nil)
 		if err != nil {
-			refreshToken, err = doLogin()
-			if err != nil {
-				return "", err
-			}
-		}
-		reqBody := map[string]string{
-			"application": "users",
-		}
-		reqJson, _ := json.Marshal(reqBody)
-		req, err := http.NewRequest("POST", userServiceURL+"/api/refresh", bytes.NewBuffer(reqJson))
-		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to create request: %w", err)
 		}
 		req.Header.Set("Cookie", "YRT="+refreshToken)
 		resp, err = http.DefaultClient.Do(req)
-		if err == nil {
+		if err == nil && resp.StatusCode == http.StatusOK {
 			break
 		}
 		resp.Body.Close()
+
+		// Try logging in and refreshing again
+		if i < 1 {
+			var loginErr error
+			refreshToken, loginErr = doLogin()
+			if loginErr != nil {
+				return "", loginErr
+			}
+		}
 	}
 
-	if err != nil {
-		return "", err
-	}
 	defer resp.Body.Close()
+	if err != nil {
+		return "", fmt.Errorf("failed to refresh token: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to refresh token, status %d", resp.StatusCode)
+	}
 
 	// Read the refresh token from the response cookie
 	cookies := resp.Cookies()
@@ -135,14 +137,34 @@ func getAccessToken() (string, error) {
 	var refreshResponse auth.RefreshResponse
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to read refresh response body: %w", err)
 	}
 	err = json.Unmarshal(body, &refreshResponse)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to unmarshal refresh response: %w", err)
 	}
 
 	return refreshResponse.AccessToken, nil
+}
+
+func listApplications(accessToken string) error {
+	url := userServiceURL + "/api/listapplications"
+
+	body, err := runRequest(url, "GET", nil, accessToken)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Applications:")
+	var apps []state.Application
+	err = json.Unmarshal(body, &apps)
+	if err != nil {
+		return err
+	}
+	for _, app := range apps {
+		fmt.Printf("- %s (ID: %s, Host: %s)\n", app.DisplayName, app.ID, app.HostName)
+	}
+	return nil
 }
 
 func listUsers(accessToken string) error {
@@ -217,7 +239,7 @@ func createUser(accessToken, username string) error {
 	return nil
 }
 
-func setUserProfile(accessToken string, userId int, application, profile string) error {
+func setUserProfile(accessToken string, userId int, applicationId, profile string) error {
 	url := userServiceURL + "/api/publish?cid=" + uuid.New().String()
 
 	event := state.UserProfileUpdatedEvent{
@@ -225,9 +247,9 @@ func setUserProfile(accessToken string, userId int, application, profile string)
 			Id:   0,
 			Type: "users:USER_PROFILE_UPDATED",
 		},
-		UserID:          userId,
-		ApplicationName: application,
-		ProfileData:     profile,
+		UserID:        userId,
+		ApplicationID: applicationId,
+		ProfileData:   profile,
 	}
 	jsonData, err := json.Marshal(event)
 	if err != nil {
@@ -269,6 +291,81 @@ func changePassword(accessToken, username, password string) error {
 	return nil
 }
 
+func addApplication(accessToken, id, displayName, hostName string) error {
+	url := userServiceURL + "/api/publish?cid=" + uuid.New().String()
+
+	event := state.ApplicationAddedEvent{
+		GenericEvent: events.GenericEvent{
+			Id:   0, // Set by the server
+			Type: "users:ADD_APPLICATION",
+		},
+		ApplicationID: id,
+		DisplayName:   displayName,
+		HostName:      hostName,
+	}
+	jsonData, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	_, err = runRequest(url, "POST", jsonData, accessToken)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Application added successfully")
+	return nil
+}
+
+func deleteApplication(accessToken, id string) error {
+	url := userServiceURL + "/api/publish?cid=" + uuid.New().String()
+
+	event := state.ApplicationDeletedEvent{
+		GenericEvent: events.GenericEvent{
+			Id:   0, // Set by the server
+			Type: "users:DELETE_APPLICATION",
+		},
+		ApplicationID: id,
+	}
+	jsonData, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	_, err = runRequest(url, "POST", jsonData, accessToken)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Application deleted successfully")
+	return nil
+}
+
+func updateApplicationHostName(accessToken, id, hostName string) error {
+	url := userServiceURL + "/api/publish?cid=" + uuid.New().String()
+
+	event := state.ApplicationHostNameUpdatedEvent{
+		GenericEvent: events.GenericEvent{
+			Id:   0, // Set by the server
+			Type: "users:UPDATE_APPLICATION_HOSTNAME",
+		},
+		ApplicationID: id,
+		HostName:      hostName,
+	}
+	jsonData, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	_, err = runRequest(url, "POST", jsonData, accessToken)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Application hostname updated successfully")
+	return nil
+}
+
 func main() {
 	// Basic command routing
 	if len(os.Args) < 2 {
@@ -287,6 +384,12 @@ func main() {
 		err := listUsers(accessToken)
 		if err != nil {
 			log.Fatalf("Error listing users: %v", err)
+		}
+
+	case "listapplications":
+		err := listApplications(accessToken)
+		if err != nil {
+			log.Fatalf("Error listing applications: %v", err)
 		}
 
 	case "getuserprofile":
@@ -319,19 +422,67 @@ func main() {
 			log.Fatalf("Error creating user: %v", err)
 		}
 
+	case "addapplication":
+		addAppCmd := flag.NewFlagSet("addapplication", flag.ExitOnError)
+		appId := addAppCmd.String("id", "", "Application ID")
+		displayName := addAppCmd.String("name", "", "Application display name")
+		hostName := addAppCmd.String("host", "", "Application host name")
+
+		addAppCmd.Parse(os.Args[2:])
+
+		if *appId == "" || *displayName == "" {
+			log.Fatalf("Usage: %s addapplication --id <id> --name <display_name> [--host <host_name>]", os.Args[0])
+		}
+
+		err := addApplication(accessToken, *appId, *displayName, *hostName)
+		if err != nil {
+			log.Fatalf("Error adding application: %v", err)
+		}
+
+	case "deleteapplication":
+		deleteAppCmd := flag.NewFlagSet("deleteapplication", flag.ExitOnError)
+		appId := deleteAppCmd.String("id", "", "Application ID to delete")
+
+		deleteAppCmd.Parse(os.Args[2:])
+
+		if *appId == "" {
+			log.Fatalf("Usage: %s deleteapplication --id <id>", os.Args[0])
+		}
+
+		err := deleteApplication(accessToken, *appId)
+		if err != nil {
+			log.Fatalf("Error deleting application: %v", err)
+		}
+
+	case "updateapplicationhostname":
+		updateHostCmd := flag.NewFlagSet("updateapplicationhostname", flag.ExitOnError)
+		appId := updateHostCmd.String("id", "", "Application ID to update")
+		hostName := updateHostCmd.String("host", "", "New host name for the application")
+
+		updateHostCmd.Parse(os.Args[2:])
+
+		if *appId == "" || *hostName == "" {
+			log.Fatalf("Usage: %s updateapplicationhostname --id <id> --host <host_name>", os.Args[0])
+		}
+
+		err := updateApplicationHostName(accessToken, *appId, *hostName)
+		if err != nil {
+			log.Fatalf("Error updating application hostname: %v", err)
+		}
+
 	case "setuserprofile":
 		setUserProfileCmd := flag.NewFlagSet("setuserprofile", flag.ExitOnError)
 		userId := setUserProfileCmd.Int("user", 0, "User ID to set profile for")
-		application := setUserProfileCmd.String("application", "", "Application name")
+		applicationID := setUserProfileCmd.String("application", "", "Application name")
 		profile := setUserProfileCmd.String("profile", "", "Profile data")
 
 		setUserProfileCmd.Parse(os.Args[2:])
 
-		if *userId == 0 || *application == "" || *profile == "" {
-			log.Fatalf("Usage: %s setuserprofile --user <user_id> --application <application_name> --profile <profile_data>", os.Args[0])
+		if *userId == 0 || *applicationID == "" || *profile == "" {
+			log.Fatalf("Usage: %s setuserprofile --user <user_id> --application <application_id> --profile <profile_data>", os.Args[0])
 		}
 
-		err := setUserProfile(accessToken, *userId, *application, *profile)
+		err := setUserProfile(accessToken, *userId, *applicationID, *profile)
 		if err != nil {
 			log.Fatalf("Error setting user profile: %v", err)
 		}

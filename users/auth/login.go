@@ -19,7 +19,12 @@ type LoginResponse struct {
 }
 
 // Login with given username and password. Returns a refresh token.
-func DoLogin(db *database.Database, sessionManager *sessions.SessionManager, loginRequest LoginRequest) (string, error) {
+func DoLogin(
+	db *database.Database,
+	sessionManager *sessions.SessionManager,
+	loginRequest LoginRequest,
+	applicationId string,
+) (string, error) {
 	success, userId, err := state.AttemptLogin(db, loginRequest.Username, loginRequest.Password)
 	if err != nil {
 		return "", errors.New("invalid username or password")
@@ -28,7 +33,15 @@ func DoLogin(db *database.Database, sessionManager *sessions.SessionManager, log
 		return "", errors.New("invalid username or password")
 	}
 
-	session, err := sessionManager.CreateSession(userId)
+	profile, err := state.GetUserProfile(db.GetDB(), userId, applicationId)
+	if err != nil {
+		return "", errors.New("failed to get user profile")
+	}
+	if profile == nil {
+		return "", errors.New("user does not have access to this application")
+	}
+
+	session, err := sessionManager.CreateSession(userId, applicationId)
 	if err != nil {
 		return "", errors.New("failed to create session")
 	}

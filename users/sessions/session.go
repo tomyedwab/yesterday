@@ -16,13 +16,14 @@ import (
 type Session struct {
 	ID            string    `json:"id" db:"id"` // Unique identifier for the session (e.g., UUID)
 	UserID        int       `json:"user_id" db:"user_id"`
+	ApplicationID string    `json:"application_id" db:"application_id"`
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
 	LastRefreshed time.Time `json:"last_refreshed" db:"last_refreshed"` // Timestamp of the last refresh token issuance
 	RefreshToken  string    `json:"refresh_token" db:"refresh_token"`   // The refresh token
 }
 
 // NewSession creates a new session instance with a unique ID.
-func NewSession(userID int) (*Session, error) {
+func NewSession(userID int, applicationID string) (*Session, error) {
 	sessionID, err := generateRandomID(16) // Generate a 16-byte random ID
 	if err != nil {
 		return nil, err
@@ -37,6 +38,7 @@ func NewSession(userID int) (*Session, error) {
 	return &Session{
 		ID:            sessionID,
 		UserID:        userID,
+		ApplicationID: applicationID,
 		CreatedAt:     now,
 		LastRefreshed: now,
 		RefreshToken:  refreshToken,
@@ -65,10 +67,12 @@ func DBInit(db *sqlx.DB) error {
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
 		user_id INTEGER NOT NULL,
+		application_id TEXT NOT NULL,
 		refresh_token TEXT NOT NULL,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		last_refreshed TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY(user_id) REFERENCES users_v1(id) ON DELETE CASCADE
+		FOREIGN KEY(user_id) REFERENCES users_v1(id) ON DELETE CASCADE,
+		FOREIGN KEY(application_id) REFERENCES applications_v1(id) ON DELETE CASCADE
 	)
 	`)
 	return err
@@ -88,7 +92,7 @@ func DBGetSessionByRefreshToken(db *sqlx.DB, refreshToken string) (*Session, err
 
 func (s *Session) DBCreate(db *sqlx.DB) error {
 	fmt.Printf("Creating session %s\n", s.ID)
-	_, err := db.Exec("INSERT INTO sessions (id, user_id, refresh_token, last_refreshed) VALUES ($1, $2, $3, $4)", s.ID, s.UserID, s.RefreshToken, s.LastRefreshed)
+	_, err := db.Exec("INSERT INTO sessions (id, user_id, application_id, refresh_token, last_refreshed) VALUES ($1, $2, $3, $4, $5)", s.ID, s.UserID, s.ApplicationID, s.RefreshToken, s.LastRefreshed)
 	return err
 }
 

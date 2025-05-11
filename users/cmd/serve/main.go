@@ -24,6 +24,25 @@ type ChangePasswordRequest struct {
 func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.SessionManager) {
 	// Endpoints used during authentication flow
 
+	AppInfoHandler := middleware.Chain(
+		func(w http.ResponseWriter, r *http.Request) {
+			app := r.URL.Query().Get("app")
+			if app == "" {
+				http.Error(w, "Application name is required", http.StatusBadRequest)
+				return
+			}
+			application, err := state.GetApplication(db.GetDB(), app)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(application.HostName))
+		},
+		middleware.LogRequests,
+	)
+
 	LoginHandler := middleware.Chain(
 		func(w http.ResponseWriter, r *http.Request) {
 			loginApplication, err := state.GetApplication(db.GetDB(), "0001-0001")
@@ -185,6 +204,7 @@ func RegisterAuthHandlers(db *database.Database, sessionManager *sessions.Sessio
 		middleware.LogRequests,
 	)
 
+	http.HandleFunc("/api/appinfo", AppInfoHandler)
 	http.HandleFunc("/api/login", LoginHandler)
 	http.HandleFunc("/api/refresh", RefreshHandler)
 	http.HandleFunc("/api/logout", LogoutHandler)

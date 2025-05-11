@@ -11,21 +11,27 @@
         input[type="text"], input[type="password"] { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         button { background-color: #007bff; color: white; padding: 0.7rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
         button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
         .error { color: red; margin-top: 1rem; text-align: center; }
+        #loginMessage span::after {
+            content: "Loading login...";
+        }
     </style>
 </head>
 <body>
     <form id="loginForm">
-        <h2>Login to <span id="appName"></span></h2>
+        <h2 id="loginMessage">
+            <span></span>
+        </h2>
         <div>
             <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required>
+            <input type="text" id="username" name="username" required disabled>
         </div>
         <div>
             <label for="password">Password:</label>
-            <input type="password" id="password" name="password" required>
+            <input type="password" id="password" name="password" required disabled>
         </div>
-        <button type="submit">Login</button>
+        <button type="submit" disabled>Login</button>
         <p id="errorMessage" class="error" style="display: none;"></p>
     </form>
     <script>
@@ -36,10 +42,35 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const appID = urlParams.get('app');
-        const appName = urlParams.get('name');
-        if (appName) {
-            document.getElementById('appName').textContent = appName;
-        }
+
+        fetch('/api/appinfo?app=' + appID, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(async response => {
+            if (!response.ok) {
+                throw new Error('Failed to fetch app info');
+            }
+            const data = await response.text();
+            const appHost = data;
+
+            // Attach CSS from target host
+            const css = await fetch('https://' + appHost + '/login.css');
+            let cssText = await css.text();
+            // Replace "$HOST$" with the appHost
+            cssText = cssText.replace(/\$HOST\$/g, 'https://' + appHost);
+            const style = document.createElement('style');
+            style.textContent = cssText;
+            document.head.appendChild(style);
+
+            // Enable inputs and button
+            usernameInput.disabled = false;
+            passwordInput.disabled = false;
+            form.querySelector('button').disabled = false;
+        });
+
         function doLogin(event) {
             event.preventDefault(); // Prevent default form submission
 

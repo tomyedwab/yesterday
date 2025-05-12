@@ -16,6 +16,8 @@ import (
 	"github.com/tomyedwab/yesterday/users/state"
 )
 
+const Version = "1.0.0"
+
 type ChangePasswordRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -251,8 +253,7 @@ func main() {
 	}
 
 	// Connect to the database and initialize schema/handlers
-	// Use a version string for your user service schema/handlers
-	db, err := database.Connect("sqlite3", dbPath, "v1.0.0", handlers)
+	db, err := database.Connect("sqlite3", dbPath, Version, handlers)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

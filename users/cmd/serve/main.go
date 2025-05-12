@@ -16,7 +16,7 @@ import (
 	"github.com/tomyedwab/yesterday/users/state"
 )
 
-const Version = "1.0.0"
+const Version = "1.0.1"
 
 type ChangePasswordRequest struct {
 	Username string `json:"username"`

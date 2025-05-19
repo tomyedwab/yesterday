@@ -14,6 +14,17 @@ import (
 
 func LoginRequired(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if os.Getenv("DUMMY_LOGIN_PROFILE") != "" {
+			// For dev only, skip authentication and set a dummy profile
+			profileValue := os.Getenv("DUMMY_LOGIN_PROFILE")
+			claimValue := util.YesterdayUserClaims{
+				Profile: profileValue,
+			}
+			nextRequest := r.WithContext(context.WithValue(r.Context(), util.ClaimsKey, &claimValue))
+			next.ServeHTTP(w, nextRequest)
+			return
+		}
+
 		// Get bearer token from request
 		token := r.Header.Get("Authorization")
 		if token == "" {
@@ -70,14 +81,14 @@ func LogRequests(next http.HandlerFunc) http.HandlerFunc {
 func EnableCrossOrigin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if os.Getenv("ENABLE_CROSS_ORIGIN") != "" {
+			// For dev only, enable CORS for all origins
 			fmt.Printf("%s - %s %s Enable Cross Origin\n",
 				r.RemoteAddr,
 				r.Method,
 				r.URL.Path,
 			)
-			w.Header().Set("Access-Control-Allow-Origin", "https://99pennies.tomyedwab.localhost") // TODO: Make this configurable
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type,Authorization")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 
 		if r.Method == "OPTIONS" {

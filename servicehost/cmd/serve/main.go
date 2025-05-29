@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -27,7 +28,6 @@ type ContextKey int
 
 const (
 	ContextKeyRequest ContextKey = iota
-	ContextKeyDB
 	ContextKeySqliteHost
 )
 
@@ -35,9 +35,6 @@ type RequestParams struct {
 	Path     string
 	RawQuery string
 }
-
-//go:embed testdata/echo.wasm
-var echoWasm []byte
 
 func readBytes(m api.Module, offset, byteCount uint32) []byte {
 	buf, ok := m.Memory().Read(offset, byteCount)
@@ -128,7 +125,25 @@ func sqliteHostHandler(requestCtx context.Context, m api.Module, reqOffset, reqB
 }
 
 func main() {
-	dbPath := "./users.db"
+	wasmFile := flag.String("wasm", "", "Path to the WASM file to load")
+	dbPathFlag := flag.String("dbPath", "", "Path to the SQLite database file")
+	port := flag.Int("port", 8080, "Port for the HTTP server")
+	flag.Parse()
+
+	if *wasmFile == "" {
+		log.Fatal("WASM file path must be provided via -wasm flag")
+	}
+
+	if *dbPathFlag == "" {
+		log.Fatal("Database path must be provided via -dbPath flag")
+	}
+
+	wasmBytes, err := os.ReadFile(*wasmFile)
+	if err != nil {
+		log.Fatalf("Failed to read WASM file %s: %v", *wasmFile, err)
+	}
+
+	dbPath := *dbPathFlag
 
 	// Define handlers for user state
 	handlers := map[string]database.EventUpdateHandler{}
@@ -143,7 +158,6 @@ func main() {
 
 	// Initialize WASI runtime
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, ContextKeyDB, db)
 	ctx = context.WithValue(ctx, ContextKeySqliteHost, sqliteHost)
 
 	r := wazero.NewRuntime(ctx)
@@ -163,7 +177,7 @@ func main() {
 	// automatically.
 	_, err = r.InstantiateWithConfig(
 		ctx,
-		echoWasm,
+		wasmBytes,
 		wazero.NewModuleConfig().WithStartFunctions("_initialize"),
 	)
 	if err != nil {
@@ -175,5 +189,7 @@ func main() {
 		return generic, nil
 	})
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	listenAddr := fmt.Sprintf(":%d", *port)
+	log.Printf("Starting server on %s", listenAddr)
+	log.Fatal(http.ListenAndServe(listenAddr, nil))
 }

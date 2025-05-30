@@ -34,24 +34,31 @@ func init() {
 type Driver struct{}
 
 // Open returns a new connection to the database.
-// The name string is currently ignored, assuming a single proxy channel.
+// If name is non-empty, then there is a transaction being passed from the host
+// environment.
 func (d *Driver) Open(name string) (driver.Conn, error) {
 	if CallHost == nil {
 		return nil, fmt.Errorf("sqlproxy: CallHost function is not set")
 	}
-	return &Conn{}, nil
+	return &Conn{HostTxID: name}, nil
 }
 
 // --- Connection implementation ---
 
 // Conn implements the driver.Conn interface.
 type Conn struct {
-	// In a more complex scenario, connection-specific state from the host might be stored here (e.g., a host-side connection ID).
+	HostTxID    string // For transactions initiated by the host and passed via DSN
+	currentTxID string // For transactions initiated by driver.Begin()
 }
 
 // Prepare returns a prepared statement, suitable for query or execution.
 func (c *Conn) Prepare(query string) (driver.Stmt, error) {
-	reqPayload, err := json.Marshal(types.SQLRequest{Command: "prepare", SQL: query})
+	sqlReq := types.SQLRequest{Command: "prepare", SQL: query}
+	if c.currentTxID != "" {
+		sqlReq.TxID = c.currentTxID
+	}
+
+	reqPayload, err := json.Marshal(sqlReq)
 	if err != nil {
 		return nil, fmt.Errorf("sqlproxy: failed to marshal prepare request: %w", err)
 	}
@@ -69,8 +76,17 @@ func (c *Conn) Prepare(query string) (driver.Stmt, error) {
 	if resp.Error != "" {
 		return nil, fmt.Errorf("sqlproxy: host prepare error: %s", resp.Error)
 	}
+	if resp.StmtID == "" {
+		return nil, fmt.Errorf("sqlproxy: host did not return a StmtID for prepare")
+	}
 
-	return &Stmt{conn: c, query: query, stmtID: resp.StmtID}, nil
+	// Store the transaction ID with the statement if it was prepared within a transaction
+	stmtTxID := ""
+	if c.currentTxID != "" {
+		stmtTxID = c.currentTxID
+	}
+
+	return &Stmt{conn: c, query: query, stmtID: resp.StmtID, txID: stmtTxID}, nil
 }
 
 // Close invalidates and potentially releases resources associated with the connection.
@@ -99,6 +115,15 @@ func (c *Conn) Close() error {
 
 // Begin starts and returns a new transaction.
 func (c *Conn) Begin() (driver.Tx, error) {
+	if c.currentTxID != "" {
+		return nil, fmt.Errorf("sqlproxy: transaction already active on this connection (TxID: %s)", c.currentTxID)
+	}
+
+	if c.HostTxID != "" { // If connection was opened with a HostTxID from DSN
+		c.currentTxID = c.HostTxID
+		return &Tx{conn: c, txID: c.HostTxID}, nil
+	}
+
 	// For BeginTx (which we are not implementing yet as per spec non-goals for context propagation),
 	// we would pass TxOptions here.
 	reqPayload, err := json.Marshal(types.SQLRequest{Command: "begin_tx"})
@@ -123,6 +148,7 @@ func (c *Conn) Begin() (driver.Tx, error) {
 		return nil, fmt.Errorf("sqlproxy: host did not return a transaction ID for begin_tx")
 	}
 
+	c.currentTxID = resp.TxID // Set current transaction ID on the connection
 	return &Tx{conn: c, txID: resp.TxID}, nil
 }
 
@@ -133,6 +159,7 @@ type Stmt struct {
 	conn   *Conn
 	query  string // Original query, mainly for context/debugging
 	stmtID string // Host-provided statement ID
+	txID   string // Transaction ID if this statement was prepared within a transaction
 }
 
 // Close closes the statement.
@@ -183,7 +210,12 @@ func convertDriverValues(args []driver.Value) []interface{} {
 // Exec executes a prepared statement with the given arguments and returns a Result.
 func (s *Stmt) Exec(args []driver.Value) (driver.Result, error) {
 	convertedArgs := convertDriverValues(args)
-	reqPayload, err := json.Marshal(types.SQLRequest{Command: "exec", StmtID: s.stmtID, Args: convertedArgs})
+	sqlReq := types.SQLRequest{Command: "exec", StmtID: s.stmtID, Args: convertedArgs}
+	if s.txID != "" { // If statement is part of a transaction
+		sqlReq.TxID = s.txID
+	}
+
+	reqPayload, err := json.Marshal(sqlReq)
 	if err != nil {
 		return nil, fmt.Errorf("sqlproxy: failed to marshal exec request: %w", err)
 	}
@@ -208,7 +240,12 @@ func (s *Stmt) Exec(args []driver.Value) (driver.Result, error) {
 // Query executes a prepared statement with the given arguments and returns Rows.
 func (s *Stmt) Query(args []driver.Value) (driver.Rows, error) {
 	convertedArgs := convertDriverValues(args)
-	reqPayload, err := json.Marshal(types.SQLRequest{Command: "query", StmtID: s.stmtID, Args: convertedArgs})
+	sqlReq := types.SQLRequest{Command: "query", StmtID: s.stmtID, Args: convertedArgs}
+	if s.txID != "" { // If statement is part of a transaction
+		sqlReq.TxID = s.txID
+	}
+
+	reqPayload, err := json.Marshal(sqlReq)
 	if err != nil {
 		return nil, fmt.Errorf("sqlproxy: failed to marshal query request: %w", err)
 	}
@@ -257,10 +294,17 @@ func (t *Tx) Commit() error {
 	if err := json.Unmarshal(respPayload, &resp); err != nil {
 		return fmt.Errorf("sqlproxy: failed to unmarshal commit response: %w", err)
 	}
-	t.txID = "" // Mark as completed
+
 	if resp.Error != "" {
-		return fmt.Errorf("sqlproxy: host commit error: %s", resp.Error)
+		// Even if commit fails on host, the transaction is likely in an indeterminate state.
+		// For safety, we clear the currentTxID on the connection, but the Tx object itself
+		// retains its txID for potential inspection, though it's effectively unusable.
+		t.conn.currentTxID = "" 
+		return fmt.Errorf("sqlproxy: host commit error: %s (TxID: %s)", resp.Error, t.txID)
 	}
+
+	t.conn.currentTxID = "" // Clear current transaction ID on the connection
+	t.txID = ""             // Mark as completed successfully
 	return nil
 }
 
@@ -281,14 +325,24 @@ func (t *Tx) Rollback() error {
 
 	var resp types.GeneralResponse
 	if err := json.Unmarshal(respPayload, &resp); err != nil {
+		// If unmarshal fails, the host state is unknown. Clear connection's txID.
+		t.conn.currentTxID = ""
 		return fmt.Errorf("sqlproxy: failed to unmarshal rollback response: %w", err)
 	}
-	t.txID = "" // Mark as completed
+
+	// Regardless of host response for rollback (success or error indicating already rolled back),
+	// the transaction is no longer considered active on this connection from the client's perspective.
+	t.conn.currentTxID = ""
+	originalTxID := t.txID // Save for error message if needed
+	t.txID = ""          // Mark Tx object as completed
+
 	if resp.Error != "" {
 		// It's common for Rollback to report an error if the transaction was already aborted due to an error.
 		// The sql package checks for driver.ErrBadConn if Rollback fails, to see if the connection is still usable.
-		return fmt.Errorf("sqlproxy: host rollback error: %s", resp.Error)
+		// Client should discard the Tx object.
+		return fmt.Errorf("sqlproxy: host rollback error: %s (TxID: %s)", resp.Error, originalTxID)
 	}
+
 	return nil
 }
 

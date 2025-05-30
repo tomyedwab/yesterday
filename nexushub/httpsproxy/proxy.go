@@ -129,6 +129,10 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if !fileInfo.IsDir() { // It's a file
 				log.Printf("Serving static file %s for host %s (request path: %s)", cleanFilePath, hostname, r.URL.Path)
 				// TODO: Implement caching for static files
+				// Set CORS headers for open access
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET")
+				w.Header().Set("Access-Control-Max-Age", "86400")
 				http.ServeFile(w, r, cleanFilePath)
 				return
 			} else { // It's a directory

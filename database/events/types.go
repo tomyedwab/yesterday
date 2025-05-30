@@ -1,7 +1,6 @@
 package events
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -40,10 +39,8 @@ func (e *GenericEvent) GetTimestamp() time.Time {
 	return e.Timestamp
 }
 
+const DBInitEventType = "__init__"
+
 type DBInitEvent struct {
 	GenericEvent
 }
-
-// A function which takes a JSON message and returns a type-specific Event
-// instance, or the original generic event.
-type MapEventType func(message *json.RawMessage, generic *GenericEvent) (Event, error)

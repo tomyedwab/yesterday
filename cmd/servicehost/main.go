@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"github.com/tomyedwab/yesterday/database"
-	"github.com/tomyedwab/yesterday/database/events"
 	"github.com/tomyedwab/yesterday/sqlproxy/host"
 )
 
@@ -28,6 +28,7 @@ type ContextKey int
 
 const (
 	ContextKeyRequest ContextKey = iota
+	ContextKeyDB
 	ContextKeySqliteHost
 )
 
@@ -96,6 +97,49 @@ func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount 
 	})
 }
 
+func reportEventError(ctx context.Context, m api.Module, errorOffset, errorByteCount uint32) {
+	error := string(readBytes(m, errorOffset, errorByteCount))
+	fmt.Printf("WASI client reported event error: %s\n", error)
+}
+
+func registerEventHandler(ctx context.Context, m api.Module, eventTypeOffset, eventTypeByteCount uint32, handlerId uint32) {
+	eventType := string(readBytes(m, eventTypeOffset, eventTypeByteCount))
+	fmt.Printf("Registering event handler %d for %s\n", handlerId, eventType)
+
+	db := ctx.Value(ContextKeyDB).(*database.Database)
+	if db == nil {
+		log.Panicln("Missing database in context")
+	}
+
+	host := ctx.Value(ContextKeySqliteHost).(*host.SQLHost)
+	if host == nil {
+		log.Panicln("Missing sqlite host in context")
+	}
+	database.AddGenericEventHandler(db, eventType, func(tx *sqlx.Tx, eventJson []byte) (bool, error) {
+		freeFn1, eventHandle := writeBytes(m, eventJson)
+		defer freeFn1()
+
+		freeFn2, txHandle := writeBytes(m, []byte(host.RegisterTx(tx.Tx)))
+		defer freeFn2()
+
+		handlerFn := m.ExportedFunction("handle_event")
+		if handlerFn == nil {
+			return false, fmt.Errorf("event handler not found")
+		}
+		value, err := handlerFn.Call(ctx, uint64(eventHandle), uint64(txHandle), uint64(handlerId))
+		if err != nil {
+			return false, fmt.Errorf("event handler returned an error: %v", err)
+		}
+		if int32(value[0]) == -1 {
+			return false, fmt.Errorf("unknown error in wasi event handler")
+		}
+		if int32(value[0]) == 1 {
+			return true, nil
+		}
+		return false, nil
+	})
+}
+
 func writeResponse(requestCtx context.Context, m api.Module, respOffset, respByteCount uint32) {
 	requestContext := requestCtx.Value(ContextKeyRequest)
 	if requestContext == nil {
@@ -145,19 +189,15 @@ func main() {
 
 	dbPath := *dbPathFlag
 
-	// Define handlers for user state
-	handlers := map[string]database.EventUpdateHandler{}
-
-	// Connect to the database and initialize schema/handlers
-	db, err := database.Connect("sqlite3", dbPath, "0.0.0", handlers)
+	db, err := database.Connect("sqlite3", dbPath)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-
 	sqliteHost := host.NewSQLHost(db.GetDB().DB)
 
 	// Initialize WASI runtime
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextKeyDB, db)
 	ctx = context.WithValue(ctx, ContextKeySqliteHost, sqliteHost)
 
 	r := wazero.NewRuntime(ctx)
@@ -167,6 +207,8 @@ func main() {
 	_, err = r.NewHostModuleBuilder("env").
 		NewFunctionBuilder().WithFunc(writeResponse).Export("write_response").
 		NewFunctionBuilder().WithFunc(registerHandler).Export("register_handler").
+		NewFunctionBuilder().WithFunc(registerEventHandler).Export("register_event_handler").
+		NewFunctionBuilder().WithFunc(reportEventError).Export("report_event_error").
 		NewFunctionBuilder().WithFunc(sqliteHostHandler).Export("sqlite_host_handler").
 		Instantiate(ctx)
 	if err != nil {
@@ -184,10 +226,10 @@ func main() {
 		log.Panicln(err)
 	}
 
-	// Initialize HTTP endpoints using our event mapper
-	db.InitHandlers(func(rawMessage *json.RawMessage, generic *events.GenericEvent) (events.Event, error) {
-		return generic, nil
-	})
+	err = db.Initialize()
+	if err != nil {
+		log.Panicln(err)
+	}
 
 	listenAddr := fmt.Sprintf(":%d", *port)
 	log.Printf("Starting server on %s", listenAddr)

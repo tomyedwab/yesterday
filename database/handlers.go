@@ -57,7 +57,7 @@ func HandleAPIResponse(w http.ResponseWriter, r *http.Request, resp interface{},
 	w.Write(json)
 }
 
-func (db *Database) InitHandlers(mapper events.MapEventType) {
+func (db *Database) InitHandlers() {
 	initialEventId, err := db.CurrentEventV1()
 	if err != nil {
 		panic(err)
@@ -94,13 +94,14 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 				HandleAPIResponse(w, r, nil, err)
 				return
 			}
-			event, err := events.ParseEvent(buf, mapper)
-			if err != nil {
+
+			var event events.GenericEvent
+			if err := json.Unmarshal(buf, &event); err != nil {
 				HandleAPIResponse(w, r, nil, err)
 				return
 			}
 
-			newEventId, err := db.CreateEvent(event, buf, clientId)
+			newEventId, err := db.CreateEvent(&event, buf, clientId)
 			if err == nil {
 				eventState.SetCurrentEventId(newEventId)
 			}
@@ -149,7 +150,7 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 			return err
 		}
 		clientId := "internal" + time.Now().Format(time.RFC3339)
-		newEventId, err := db.CreateEvent(event, buf, clientId)
+		newEventId, err := db.CreateEvent(event.(*events.GenericEvent), buf, clientId)
 		if err != nil {
 			return err
 		}

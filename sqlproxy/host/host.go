@@ -86,11 +86,24 @@ func marshalErrorResponse(errMsg string) ([]byte, error) {
 
 func (h *SQLHost) handlePrepare(req *types.SQLRequest) (types.GeneralResponse, error) {
 	h.mu.Lock()
+	tx, txExists := h.txs[req.TxID]
 	defer h.mu.Unlock()
 
-	stmt, err := h.db.Prepare(req.SQL)
-	if err != nil {
-		return types.GeneralResponse{}, fmt.Errorf("prepare failed: %w", err)
+	var stmt *sql.Stmt
+	var err error
+	if req.TxID != "" {
+		if !txExists {
+			return types.GeneralResponse{}, fmt.Errorf("transaction not found for statement execution: %s", req.TxID)
+		}
+		stmt, err = tx.Prepare(req.SQL)
+		if err != nil {
+			return types.GeneralResponse{}, fmt.Errorf("prepare failed: %w", err)
+		}
+	} else {
+		stmt, err = h.db.Prepare(req.SQL)
+		if err != nil {
+			return types.GeneralResponse{}, fmt.Errorf("prepare failed: %w", err)
+		}
 	}
 
 	stmtID := uuid.NewString()
@@ -235,6 +248,15 @@ func processRowValues(rawRow []interface{}) ([]interface{}, error) {
 		}
 	}
 	return processedRow, nil
+}
+
+func (h *SQLHost) RegisterTx(tx *sql.Tx) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	txID := uuid.NewString()
+	h.txs[txID] = tx
+	return txID
 }
 
 func (h *SQLHost) handleBeginTx(req *types.SQLRequest) (types.GeneralResponse, error) {

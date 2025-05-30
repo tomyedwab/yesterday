@@ -64,11 +64,13 @@ func (db *Database) InitHandlers(mapper events.MapEventType) {
 	}
 	eventState := events.NewEventState(initialEventId)
 
-	http.HandleFunc("/api/status", middleware.ApplyDefault(
-		func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "ok")
-		},
-	))
+	/*
+		http.HandleFunc("/api/status", middleware.ApplyDefault(
+			func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, "ok")
+			},
+		))
+	*/
 
 	http.HandleFunc("/api/publish", middleware.ApplyDefault(
 		func(w http.ResponseWriter, r *http.Request) {

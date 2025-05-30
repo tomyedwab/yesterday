@@ -1,10 +1,18 @@
 package wasi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"net/url"
+)
 
 type RequestParams struct {
 	Path     string
 	RawQuery string
+}
+
+func (params RequestParams) Query() url.Values {
+	v, _ := url.ParseQuery(params.RawQuery)
+	return v
 }
 
 type RequestHandler func(params RequestParams) (string, error)

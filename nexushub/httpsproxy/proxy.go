@@ -3,13 +3,15 @@ package httpsproxy
 import (
 	"crypto/tls"
 	"log"
-	"net" // Added for SplitHostPort
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"            // For file system operations
+	"path/filepath" // For path manipulation
+	"strings"       // For string manipulation
 	"time"
 
-	"github.com/tomyedwab/yesterday/database/processes"
+	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
 // ProcessManagerInterface defines the methods the HostnameResolver needs
@@ -80,20 +82,12 @@ func (p *Proxy) Start() error {
 }
 
 // handleRequest is the HTTP handler function for the proxy.
-// It extracts the hostname from the request, resolves it to a backend AppInstance,
-// and proxies the request to that instance.
+// It extracts the hostname from the request, resolves it to a backend AppInstance.
+// If the instance has a StaticPath and the requested resource exists as a file, it serves the static file.
+// Otherwise, it proxies the request to that instance.
 // If resolution fails or the backend is unavailable, it returns an appropriate error.
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	hostInput := r.Host // r.Host includes port if specified by client
-	hostname, _, err := net.SplitHostPort(hostInput)
-	if err != nil {
-		// If SplitHostPort fails, it might be that hostInput doesn't have a port,
-		// which is fine. In that case, hostInput is the hostname itself.
-		// Or it could be an invalid format like "[::1]:%invalid%".
-		// For simplicity, we'll assume if there's an error, hostInput is the hostname.
-		// A more robust solution might inspect the error type.
-		hostname = hostInput
-	}
+	hostname := r.Host // r.Host includes port if specified by client
 
 	instance, err := p.pm.GetAppInstanceByHostName(hostname)
 	if err != nil {
@@ -108,10 +102,46 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construct target URL for the backend service (HTTP)
+	// Check for static file serving
+	if instance.StaticPath != "" {
+		requestedPath := r.URL.Path
+		if requestedPath == "/" {
+			requestedPath = "/index.html" // Map root to index.html
+		}
+
+		// Construct the full path to the potential static file.
+		// filepath.Clean is used to sanitize the path and help prevent directory traversal.
+		filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
+
+		// Security check: Ensure the cleaned filePath is still within the StaticPath directory.
+		// Both paths are cleaned to handle variations like trailing slashes consistently.
+		cleanStaticPath := filepath.Clean(instance.StaticPath)
+		cleanFilePath := filepath.Clean(filePath)
+
+		if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
+			log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for host '%s'", cleanFilePath, r.URL.Path, cleanStaticPath, hostname)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		fileInfo, err := os.Stat(cleanFilePath)
+		if err == nil { // File or directory exists at cleanFilePath
+			if !fileInfo.IsDir() { // It's a file
+				log.Printf("Serving static file %s for host %s (request path: %s)", cleanFilePath, hostname, r.URL.Path)
+				// TODO: Implement caching for static files
+				http.ServeFile(w, r, cleanFilePath)
+				return
+			} else { // It's a directory
+				log.Printf("Requested path %s (resolved to %s) maps to a directory, not a file. Proceeding to proxy for host %s.", r.URL.Path, cleanFilePath, hostname)
+			}
+		}
+		// If file doesn't exist, is a directory, or another os.Stat error occurred, fall through to proxy logic.
+	}
+
+	// If not serving a static file, or if checks above decided to fall through, proceed to proxy the request via HTTP.
 	targetURL := &url.URL{
-		Scheme: "http",                                  // Communication to backend is HTTP
-		Host:   instance.HostName + ":" + instance.Port, // Assuming AppInstance has HostName and Port
+		Scheme: "http",
+		Host:   "localhost:" + instance.Port,
 	}
 
 	reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
@@ -121,7 +151,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	r.URL.Scheme = targetURL.Scheme
 	r.URL.Host = targetURL.Host
 
-	log.Printf("Proxying request for %s to %s", hostname, targetURL.String())
+	log.Printf("Proxying request for host %s (request path: %s) to %s", hostname, r.URL.Path, targetURL.String())
 	reverseProxy.ServeHTTP(w, r)
 }
 

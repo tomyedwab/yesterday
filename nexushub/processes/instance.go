@@ -6,6 +6,7 @@ type AppInstance struct {
 	InstanceID string // Unique identifier for the application instance.
 	HostName   string // Hostname for reverse proxy routing.
 	WasmPath   string // File system path to the WASM module for this instance.
+	StaticPath string // File system path to static files for this instance.
 	DbName     string // Database name/identifier to be used by this instance.
 	Port       string // Dynamically assigned port the instance is listening on. Populated by ProcessManager.
 }

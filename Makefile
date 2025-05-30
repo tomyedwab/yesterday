@@ -3,9 +3,10 @@ build:
 	mkdir -p dist/bin
 	GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o dist/0001-0001/app.wasm users/cmd/serve/main.go
 	go build -o dist/bin/servicehost cmd/servicehost/main.go
+	go build -o dist/bin/nexushub cmd/nexushub/main.go
 
 serve: build
-	./dist/bin/servicehost -wasm dist/0001-0001/app.wasm -dbPath users.db -port 8080
+	./dist/bin/nexushub
 
 deploy:
 	aws s3 sync ./www s3://login-tomyedwab-com/

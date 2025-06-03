@@ -175,26 +175,50 @@ func (pm *ProcessManager) Stop() {
 // It returns a copy of the AppInstance (including its dynamically assigned port)
 // if found, otherwise returns nil and an error.
 // This method is thread-safe.
-func (pm *ProcessManager) GetAppInstanceByHostName(hostname string) (*AppInstance, error) {
+// GetAppInstanceByHostName searches for a running and healthy AppInstance by its HostName.
+// It returns a copy of the AppInstance (including its dynamically assigned port)
+// if found, otherwise returns nil and an error.
+// This method is thread-safe.
+func (pm *ProcessManager) GetAppInstanceByHostName(hostname string) (*AppInstance, int, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	for _, managedProcess := range pm.actualState {
-		if managedProcess.Instance.HostName == hostname {
-			// Ensure the process is in a queryable state (e.g., Running)
-			// The proxy spec mentions checking for healthy/running state.
-			if managedProcess.GetState() == StateRunning { // Use GetState() method
-				// Return a copy of the instance with the port
-				instanceCopy := managedProcess.Instance // This is the declarative AppInstance
-				instanceCopy.Port = fmt.Sprintf("%d", managedProcess.Port) // Use .Port and convert int to string
-				return &instanceCopy, nil
+	for _, process := range pm.actualState {
+		if process.Instance.HostName == hostname {
+			if process.GetState() == StateRunning { // Ensure the instance is actually running and healthy
+				// Return a copy to prevent modification by the caller
+				instanceCopy := process.Instance
+				return &instanceCopy, process.Port, nil
 			}
-			pm.logger.Warn("Found instance by hostname but it's not running", "hostname", hostname, "instanceID", managedProcess.Instance.InstanceID, "state", managedProcess.GetState().String()) // Use GetState()
-			return nil, fmt.Errorf("instance for hostname '%s' found but not in a running state (current state: %s)", hostname, managedProcess.GetState().String())
+			pm.logger.Warn("Found instance by hostname but it's not running", "hostname", hostname, "instanceID", process.Instance.InstanceID, "state", process.GetState().String())
+			return nil, 0, fmt.Errorf("instance for hostname '%s' found but not in a running state (current state: %s)", hostname, process.GetState().String())
 		}
 	}
 
-	return nil, fmt.Errorf("no running instance found for hostname: %s", hostname)
+	return nil, 0, fmt.Errorf("no active and running instance found for hostname: %s", hostname)
+}
+
+// GetAppInstanceByID searches for a running and healthy AppInstance by its InstanceID.
+// It returns a copy of the AppInstance (including its dynamically assigned port)
+// if found, otherwise returns nil and an error.
+// This method is thread-safe.
+func (pm *ProcessManager) GetAppInstanceByID(id string) (*AppInstance, int, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	process, exists := pm.actualState[id]
+	if !exists {
+		return nil, 0, fmt.Errorf("no instance found with ID: %s", id)
+	}
+
+	if process.GetState() == StateRunning { // Ensure the instance is actually running and healthy
+		// Return a copy to prevent modification by the caller
+		instanceCopy := process.Instance
+		return &instanceCopy, process.Port, nil
+	}
+
+	pm.logger.Warn("Found instance by ID but it's not running", "instanceID", id, "state", process.GetState().String())
+	return nil, 0, fmt.Errorf("instance with ID '%s' found but not in a running state (current state: %s)", id, process.GetState().String())
 }
 
 // shutdown handles the graceful termination of all managed subprocesses.

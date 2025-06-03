@@ -30,7 +30,7 @@ func main() {
 			HostName:   "login.yesterday.localhost:8443",
 			StaticPath: "dist/0001-0001/static",
 			WasmPath:   "dist/0001-0001/app.wasm",
-			DbName:     "db/admin.db",
+			DbName:     "db/sessions.db",
 		},
 		{
 			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",

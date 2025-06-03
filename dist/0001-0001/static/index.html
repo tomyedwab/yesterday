@@ -43,8 +43,9 @@
         const urlParams = new URLSearchParams(window.location.search);
         const appID = urlParams.get('app');
 
-        fetch('/api/appinfo?app=' + appID, {
-            method: 'GET',
+        fetch('/api/appinfo', {
+            method: 'POST',
+            body: JSON.stringify({ applicationID: appID }),
             headers: {
                 'Content-Type': 'application/json',
             },
@@ -80,12 +81,12 @@
             const password = passwordInput.value;
 
             // Call the /api/login endpoint
-            fetch('/api/login?app=' + appID, {
+            fetch('/api/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ username, password, applicationID: appID }),
             })
             .then(async response => {
                 if (!response.ok) { // Check if status code is 200-299

@@ -8,7 +8,8 @@ import (
 	"net/url"
 	"os"            // For file system operations
 	"path/filepath" // For path manipulation
-	"strings"       // For string manipulation
+	"strconv"
+	"strings" // For string manipulation
 	"time"
 
 	"github.com/tomyedwab/yesterday/nexushub/processes"
@@ -18,7 +19,8 @@ import (
 // from the ProcessManager. This helps in decoupling and testing.
 // It should provide a way to get an AppInstance by its hostname.
 type ProcessManagerInterface interface {
-	GetAppInstanceByHostName(hostname string) (*processes.AppInstance, error)
+	GetAppInstanceByHostName(hostname string) (*processes.AppInstance, int, error)
+	GetAppInstanceByID(id string) (*processes.AppInstance, int, error) // Added for AppID lookup
 }
 
 // Proxy represents the HTTPS reverse proxy server.
@@ -82,24 +84,52 @@ func (p *Proxy) Start() error {
 }
 
 // handleRequest is the HTTP handler function for the proxy.
-// It extracts the hostname from the request, resolves it to a backend AppInstance.
+// It checks for "X-Application-Id" header. If set, uses it to find the AppInstance.
+// Otherwise, it extracts the hostname from the request and resolves it to a backend AppInstance.
 // If the instance has a StaticPath and the requested resource exists as a file, it serves the static file.
 // Otherwise, it proxies the request to that instance.
 // If resolution fails or the backend is unavailable, it returns an appropriate error.
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	hostname := r.Host // r.Host includes port if specified by client
+	var instance *processes.AppInstance
+	var port int
+	var err error
+	var resolutionIdentifier string        // For logging: "AppID 'xyz'" or "hostname 'abc.com'"
+	var originalHostForLog string = r.Host // Capture original host for logging before it's modified
 
-	instance, err := p.pm.GetAppInstanceByHostName(hostname)
-	if err != nil {
-		log.Printf("Error resolving hostname '%s': %v", hostname, err)
-		http.Error(w, "Service not found for hostname: "+hostname, http.StatusNotFound)
-		return
-	}
+	appID := r.Header.Get("X-Application-Id")
 
-	if instance == nil {
-		log.Printf("No active instance found for hostname '%s'", hostname)
-		http.Error(w, "Service unavailable for hostname: "+hostname, http.StatusServiceUnavailable)
-		return
+	if appID != "" {
+		resolutionIdentifier = "AppID '" + appID + "'"
+		log.Printf("Attempting to resolve request using %s (original host: %s)", resolutionIdentifier, originalHostForLog)
+		instance, port, err = p.pm.GetAppInstanceByID(appID)
+		if err != nil {
+			log.Printf("Error resolving %s: %v", resolutionIdentifier, err)
+			http.Error(w, "Service not found for "+resolutionIdentifier, http.StatusNotFound)
+			return
+		}
+		if instance == nil {
+			log.Printf("No active instance found for %s", resolutionIdentifier)
+			http.Error(w, "Service unavailable for "+resolutionIdentifier, http.StatusServiceUnavailable)
+			return
+		}
+		log.Printf("Successfully resolved %s to instance ID '%s' (Port: %d)", resolutionIdentifier, instance.InstanceID, port)
+	} else {
+		// Fallback to hostname-based routing
+		hostname := originalHostForLog // r.Host includes port if specified by client
+		resolutionIdentifier = "hostname '" + hostname + "'"
+		log.Printf("Attempting to resolve request using %s (X-Application-Id header not found or empty)", resolutionIdentifier)
+		instance, port, err = p.pm.GetAppInstanceByHostName(hostname)
+		if err != nil {
+			log.Printf("Error resolving %s: %v", resolutionIdentifier, err)
+			http.Error(w, "Service not found for "+resolutionIdentifier, http.StatusNotFound)
+			return
+		}
+		if instance == nil {
+			log.Printf("No active instance found for %s", resolutionIdentifier)
+			http.Error(w, "Service unavailable for "+resolutionIdentifier, http.StatusServiceUnavailable)
+			return
+		}
+		log.Printf("Successfully resolved %s to instance ID '%s' (Port: %d)", resolutionIdentifier, instance.InstanceID, port)
 	}
 
 	// Check for static file serving
@@ -109,34 +139,27 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			requestedPath = "/index.html" // Map root to index.html
 		}
 
-		// Construct the full path to the potential static file.
-		// filepath.Clean is used to sanitize the path and help prevent directory traversal.
 		filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
-
-		// Security check: Ensure the cleaned filePath is still within the StaticPath directory.
-		// Both paths are cleaned to handle variations like trailing slashes consistently.
 		cleanStaticPath := filepath.Clean(instance.StaticPath)
 		cleanFilePath := filepath.Clean(filePath)
 
 		if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
-			log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for host '%s'", cleanFilePath, r.URL.Path, cleanStaticPath, hostname)
+			log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for %s (instance ID '%s')", cleanFilePath, r.URL.Path, cleanStaticPath, resolutionIdentifier, instance.InstanceID)
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
 
-		fileInfo, err := os.Stat(cleanFilePath)
-		if err == nil { // File or directory exists at cleanFilePath
+		fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
+		if statErr == nil {                         // File or directory exists at cleanFilePath
 			if !fileInfo.IsDir() { // It's a file
-				log.Printf("Serving static file %s for host %s (request path: %s)", cleanFilePath, hostname, r.URL.Path)
-				// TODO: Implement caching for static files
-				// Set CORS headers for open access
+				log.Printf("Serving static file %s for %s (instance ID '%s', request path: %s)", cleanFilePath, resolutionIdentifier, instance.InstanceID, r.URL.Path)
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				w.Header().Set("Access-Control-Allow-Methods", "GET")
 				w.Header().Set("Access-Control-Max-Age", "86400")
 				http.ServeFile(w, r, cleanFilePath)
 				return
 			} else { // It's a directory
-				log.Printf("Requested path %s (resolved to %s) maps to a directory, not a file. Proceeding to proxy for host %s.", r.URL.Path, cleanFilePath, hostname)
+				log.Printf("Requested path %s (resolved to %s) maps to a directory, not a file. Proceeding to proxy for %s (instance ID '%s').", r.URL.Path, cleanFilePath, resolutionIdentifier, instance.InstanceID)
 			}
 		}
 		// If file doesn't exist, is a directory, or another os.Stat error occurred, fall through to proxy logic.
@@ -144,18 +167,16 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// If not serving a static file, or if checks above decided to fall through, proceed to proxy the request via HTTP.
 	targetURL := &url.URL{
-		Scheme: "http",
-		Host:   "localhost:" + instance.Port,
+		Scheme: "http", // Backend services are HTTP
+		Host:   "localhost:" + strconv.Itoa(port),
 	}
 
 	reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
 
 	// Update the request host to match the target for the reverse proxy.
 	r.Host = targetURL.Host
-	r.URL.Scheme = targetURL.Scheme
-	r.URL.Host = targetURL.Host
 
-	log.Printf("Proxying request for host %s (request path: %s) to %s", hostname, r.URL.Path, targetURL.String())
+	log.Printf("Proxying request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
 	reverseProxy.ServeHTTP(w, r)
 }
 

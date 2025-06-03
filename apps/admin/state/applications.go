@@ -18,7 +18,7 @@ type Application struct {
 
 // -- Event handlers --
 
-func HandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) {
+func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) {
 	// Create applications table
 	_, err := tx.Exec(`
 		CREATE TABLE applications_v1 (

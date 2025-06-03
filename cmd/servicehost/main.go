@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/jmoiron/sqlx"
@@ -17,6 +21,7 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"github.com/tomyedwab/yesterday/database"
 	"github.com/tomyedwab/yesterday/sqlproxy/host"
+	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
 type RequestContext struct {
@@ -31,11 +36,6 @@ const (
 	ContextKeyDB
 	ContextKeySqliteHost
 )
-
-type RequestParams struct {
-	Path     string
-	RawQuery string
-}
 
 func readBytes(m api.Module, offset, byteCount uint32) []byte {
 	buf, ok := m.Memory().Read(offset, byteCount)
@@ -57,11 +57,14 @@ func writeBytes(m api.Module, data []byte) (freeFn func(), handle uint32) {
 	freeFn = func() {
 		free.Call(context.Background(), uint64(handle))
 	}
-	fmt.Printf("Writing %d bytes to %d on handle %d\n", len(data), ptr, handle)
 	if !m.Memory().Write(ptr, data) {
 		log.Panicln("Memory.Write failed")
 	}
 	return
+}
+
+func writeLog(ctx context.Context, m api.Module, logOffset, logByteCount uint32) {
+	fmt.Println(string(readBytes(m, logOffset, logByteCount)))
 }
 
 func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount uint32, handlerId uint32) {
@@ -74,9 +77,17 @@ func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount 
 			r: r,
 		})
 
-		params := RequestParams{
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Printf("Failed to read request body: %v\n", err)
+			return
+		}
+
+		params := types.RequestParams{
 			Path:     r.URL.Path,
 			RawQuery: r.URL.RawQuery,
+			Body:     string(bodyBytes),
 		}
 		jsonBytes, _ := json.Marshal(params)
 		freeFn, handle := writeBytes(m, jsonBytes)
@@ -88,7 +99,7 @@ func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount 
 			fmt.Printf("Request handler not found")
 			return
 		}
-		_, err := handlerFn.Call(requestCtx, uint64(handle), uint64(handlerId))
+		_, err = handlerFn.Call(requestCtx, uint64(handle), uint64(handlerId))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Printf("Request returned an error: %v\n", err)
@@ -145,8 +156,20 @@ func writeResponse(requestCtx context.Context, m api.Module, respOffset, respByt
 	if requestContext == nil {
 		log.Panicln("Missing request context")
 	}
-	response := readBytes(m, respOffset, respByteCount)
-	requestContext.(RequestContext).w.Write(response)
+	responseJson := readBytes(m, respOffset, respByteCount)
+	var response types.Response
+	err := json.Unmarshal(responseJson, &response)
+	w := requestContext.(RequestContext).w
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+	w.WriteHeader(response.Status)
+	for k, v := range response.Headers {
+		w.Header().Set(k, v)
+	}
+	w.Write([]byte(response.Body))
 }
 
 func sqliteHostHandler(requestCtx context.Context, m api.Module, reqOffset, reqByteCount uint32) uint64 {
@@ -166,6 +189,59 @@ func sqliteHostHandler(requestCtx context.Context, m api.Module, reqOffset, reqB
 	}
 	_, handle := writeBytes(m, response)
 	return uint64(handle)
+}
+
+func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, reqByteCount uint32) uint32 {
+	var response types.CrossServiceResponse
+	request := readBytes(m, reqOffset, reqByteCount)
+	var crossServiceRequest types.CrossServiceRequest
+	err := json.Unmarshal(request, &crossServiceRequest)
+	if err != nil {
+		response.Status = http.StatusInternalServerError
+		response.Body = "Error unmarshaling cross service request: " + err.Error()
+		responseJson, _ := json.Marshal(response)
+		_, handle := writeBytes(m, responseJson)
+		return uint32(handle)
+	}
+
+	csReq := http.Request{
+		Method: "POST",
+		URL:    &url.URL{Scheme: "https", Host: "internal.yesterday.localhost:8443", Path: crossServiceRequest.Path},
+		Header: http.Header{
+			"Content-Type":     []string{"application/json"},
+			"X-Application-Id": []string{crossServiceRequest.ApplicationID},
+		},
+		Body: io.NopCloser(bytes.NewReader([]byte(crossServiceRequest.Body))),
+	}
+	// TODO(tom) Hopefully we can come up with a better solution for
+	// certificates that doesn't require disabling verification.
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+	resp, err := client.Do(&csReq)
+	if err != nil {
+		response.Status = http.StatusInternalServerError
+		response.Body = "Error making cross service request: " + err.Error()
+		responseJson, _ := json.Marshal(response)
+		_, handle := writeBytes(m, responseJson)
+		return uint32(handle)
+	}
+	defer resp.Body.Close()
+
+	response.Status = resp.StatusCode
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		response.Status = http.StatusInternalServerError
+		response.Body = err.Error()
+		responseJson, _ := json.Marshal(response)
+		_, handle := writeBytes(m, responseJson)
+		return uint32(handle)
+	}
+	response.Body = string(bodyBytes)
+	responseJson, _ := json.Marshal(response)
+	_, handle := writeBytes(m, responseJson)
+	return uint32(handle)
 }
 
 func main() {
@@ -205,11 +281,13 @@ func main() {
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
 	_, err = r.NewHostModuleBuilder("env").
+		NewFunctionBuilder().WithFunc(writeLog).Export("write_log").
 		NewFunctionBuilder().WithFunc(writeResponse).Export("write_response").
 		NewFunctionBuilder().WithFunc(registerHandler).Export("register_handler").
 		NewFunctionBuilder().WithFunc(registerEventHandler).Export("register_event_handler").
 		NewFunctionBuilder().WithFunc(reportEventError).Export("report_event_error").
 		NewFunctionBuilder().WithFunc(sqliteHostHandler).Export("sqlite_host_handler").
+		NewFunctionBuilder().WithFunc(crossServiceRequest).Export("cross_service_request").
 		Instantiate(ctx)
 	if err != nil {
 		log.Fatal(err)

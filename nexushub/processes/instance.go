@@ -8,5 +8,4 @@ type AppInstance struct {
 	WasmPath   string // File system path to the WASM module for this instance.
 	StaticPath string // File system path to static files for this instance.
 	DbName     string // Database name/identifier to be used by this instance.
-	Port       string // Dynamically assigned port the instance is listening on. Populated by ProcessManager.
 }

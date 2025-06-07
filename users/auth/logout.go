@@ -3,8 +3,8 @@ package auth
 import (
 	"fmt"
 
+	"github.com/tomyedwab/yesterday/apps/login/sessions"
 	"github.com/tomyedwab/yesterday/database"
-	"github.com/tomyedwab/yesterday/users/sessions"
 )
 
 func DoLogout(db *database.Database, sessionManager *sessions.SessionManager, refreshToken string) error {

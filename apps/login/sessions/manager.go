@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/apps/login/types"
 	"github.com/tomyedwab/yesterday/wasi/guest"
 )
 
@@ -44,13 +45,8 @@ func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*S
 	return m, nil
 }
 
-// CreateSession performs the following steps:
-// 1. Creates a new Session object.
-// 2. Generates a refresh token.
-// 3. Stores the session details in the SessionStore (database).
-// Returns the new session or an error.
-func (m *SessionManager) CreateSession(userID int, applicationID string) (*Session, error) {
-	session, err := NewSession(userID, applicationID)
+func (m *SessionManager) CreateSession(userID int, sessionType string) (*Session, error) {
+	session, err := NewSession(userID, sessionType)
 	if err != nil {
 		return nil, err
 	}
@@ -59,20 +55,6 @@ func (m *SessionManager) CreateSession(userID int, applicationID string) (*Sessi
 	if err := session.DBCreate(m.db); err != nil {
 		// Handle DB error (e.g., constraints violation, connection issues)
 		return nil, err
-	}
-
-	return session, nil
-}
-
-func (m *SessionManager) GetSession(sessionID string) (*Session, error) {
-	session, err := DBGetSessionByID(m.db, sessionID)
-	if err != nil {
-		return nil, err
-	}
-
-	if time.Since(session.LastRefreshed) > m.sessionExpiry {
-		session.DBDelete(m.db)
-		return nil, ErrSessionExpired
 	}
 
 	return session, nil
@@ -95,47 +77,31 @@ func (m *SessionManager) DeleteExpiredSessions() error {
 	return DBDeleteExpiredSessions(m.db, m.sessionExpiry)
 }
 
-// RefreshAccessToken creates a new JWT access token and updates the session
-// with a new refresh token. It returns the access and refresh tokens, or an
-// error.
-/*
-func (m *SessionManager) RefreshAccessToken(session *Session, refreshToken, applicationID, profileData string) (string, string, error) {
-	if session.RefreshToken != refreshToken {
-		return "", "", ErrInvalidRefreshToken
+// GetAccessToken creates a new access token which is stored in-memory in
+// NexusHub, and rotates the refresh token in the database.
+func (m *SessionManager) CreateAccessToken(request *types.AccessTokenRequest) (*types.AccessTokenResponse, error) {
+	session, err := DBGetSessionByRefreshToken(m.db, request.RefreshToken)
+	if err != nil {
+		return nil, ErrSessionNotFound
 	}
 
-	if time.Since(session.LastRefreshed) > m.sessionExpiry {
+	if time.Since(time.Unix(int64(session.LastRefreshed), 0)) > m.sessionExpiry {
 		session.DBDelete(m.db)
-		return "", "", ErrSessionExpired
+		return nil, ErrSessionExpired
 	}
 
 	// Calculate expiry time
-	expiresAt := time.Now().UTC().Add(m.accessExpiry)
-
-	// Create the JWT claims
-	claims := util.YesterdayUserClaims{
-		SessionID:   session.ID,
-		Expiry:      expiresAt.Unix(),
-		IssuedAt:    time.Now().UTC().Unix(),
-		Application: applicationID,
-		Profile:     profileData,
-	}
-
-	// Create the token with claims
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	// Sign the token with the secret key
-	tokenString, err := token.SignedString(m.jwtSecretKey)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to sign JWT token: %w", err)
-	}
+	expiresAt := time.Now().UTC().Add(m.accessExpiry).Unix()
 
 	// Update the session with the new refresh token
-	refreshToken, err = session.DBUpdateRefreshToken(m.db)
+	refreshToken, err := session.DBUpdateRefreshToken(m.db)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to update session with new refresh token: %w", err)
+		return nil, fmt.Errorf("failed to update session with new refresh token: %w", err)
 	}
 
-	return tokenString, refreshToken, nil
+	return &types.AccessTokenResponse{
+		Expiry:       expiresAt,
+		RefreshToken: refreshToken,
+		AccessToken:  guest.CreateUUID(),
+	}, nil
 }
-*/

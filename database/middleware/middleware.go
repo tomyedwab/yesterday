@@ -113,7 +113,7 @@ func Chain(h http.HandlerFunc, middleware ...func(http.HandlerFunc) http.Handler
 func ApplyDefault(h http.HandlerFunc) http.HandlerFunc {
 	return Chain(
 		h,
-		LoginRequired,
+		//LoginRequired, TODO(tom) STOPSHIP
 		EnableCrossOrigin,
 		LogRequests,
 	)

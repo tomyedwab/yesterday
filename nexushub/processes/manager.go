@@ -410,6 +410,7 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 	cmdArgs := []string{
 		"-wasm", instance.WasmPath,
 		"-dbPath", instance.DbName,
+		"-host", instance.HostName,
 		"-port", fmt.Sprintf("%d", port),
 	}
 

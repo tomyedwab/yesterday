@@ -1,0 +1,13 @@
+body {
+    background-image: url(/login.jpg);
+    background-size: cover;
+}
+
+#loginForm {
+    background-color: #fbeefd;
+}
+
+/* Override the default login message */
+#loginMessage span::after {
+    content: "Login to Nexus Admin";
+}

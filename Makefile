@@ -6,7 +6,11 @@ build:
 	go build -o dist/bin/nexushub cmd/nexushub/main.go
 
 serve: build
-	./dist/bin/nexushub
+	if command -v hl >/dev/null 2>&1; then \
+		./dist/bin/nexushub | hl -F -h component -h pid; \
+	else \
+		./dist/bin/nexushub; \
+	fi
 
 deploy:
 	aws s3 sync ./www s3://login-tomyedwab-com/

@@ -38,6 +38,7 @@ func main() {
 			StaticPath: "dist/0001-0002/static",
 			WasmPath:   "dist/0001-0002/app.wasm",
 			DbName:     "db/admin.db",
+			DebugPort:  5173,
 		},
 	}
 	appProvider := processes.NewSimpleAppInstanceProvider(sampleInstances)

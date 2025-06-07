@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
@@ -33,6 +34,7 @@ type ContextKey int
 
 const (
 	ContextKeyRequest ContextKey = iota
+	ContextKeyHost
 	ContextKeyDB
 	ContextKeySqliteHost
 )
@@ -63,8 +65,31 @@ func writeBytes(m api.Module, data []byte) (freeFn func(), handle uint32) {
 	return
 }
 
+func initModule(ctx context.Context, m api.Module, versionOffset, versionByteCount uint32) {
+	db := ctx.Value(ContextKeyDB).(*database.Database)
+	if db == nil {
+		log.Panicln("Missing database in context")
+	}
+	db.SetVersion(string(readBytes(m, versionOffset, versionByteCount)))
+}
+
+func getHost(ctx context.Context, m api.Module) uint32 {
+	host := ctx.Value(ContextKeyHost).(string)
+	if host == "" {
+		log.Fatal("Host must be provided via -host flag")
+	}
+	_, handle := writeBytes(m, []byte(host))
+	return handle
+}
+
 func writeLog(ctx context.Context, m api.Module, logOffset, logByteCount uint32) {
 	fmt.Println(string(readBytes(m, logOffset, logByteCount)))
+}
+
+func createUUID(ctx context.Context, m api.Module) uint32 {
+	newID := uuid.New().String()
+	_, handle := writeBytes(m, []byte(newID))
+	return handle
 }
 
 func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount uint32, handlerId uint32) {
@@ -165,10 +190,10 @@ func writeResponse(requestCtx context.Context, m api.Module, respOffset, respByt
 		w.Write([]byte(err.Error()))
 		return
 	}
-	w.WriteHeader(response.Status)
 	for k, v := range response.Headers {
 		w.Header().Set(k, v)
 	}
+	w.WriteHeader(response.Status)
 	w.Write([]byte(response.Body))
 }
 
@@ -245,8 +270,10 @@ func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, re
 }
 
 func main() {
+	// TODO(tom): More flexible configuration sharing from nexushub
 	wasmFile := flag.String("wasm", "", "Path to the WASM file to load")
 	dbPathFlag := flag.String("dbPath", "", "Path to the SQLite database file")
+	hostFlag := flag.String("host", "", "Host for the HTTP server")
 	port := flag.Int("port", 8080, "Port for the HTTP server")
 	flag.Parse()
 
@@ -256,6 +283,10 @@ func main() {
 
 	if *dbPathFlag == "" {
 		log.Fatal("Database path must be provided via -dbPath flag")
+	}
+
+	if *hostFlag == "" {
+		log.Fatal("Host must be provided via -host flag")
 	}
 
 	wasmBytes, err := os.ReadFile(*wasmFile)
@@ -275,13 +306,17 @@ func main() {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, ContextKeyDB, db)
 	ctx = context.WithValue(ctx, ContextKeySqliteHost, sqliteHost)
+	ctx = context.WithValue(ctx, ContextKeyHost, *hostFlag)
 
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
 	_, err = r.NewHostModuleBuilder("env").
+		NewFunctionBuilder().WithFunc(initModule).Export("init_module").
+		NewFunctionBuilder().WithFunc(getHost).Export("get_host").
 		NewFunctionBuilder().WithFunc(writeLog).Export("write_log").
+		NewFunctionBuilder().WithFunc(createUUID).Export("create_uuid").
 		NewFunctionBuilder().WithFunc(writeResponse).Export("write_response").
 		NewFunctionBuilder().WithFunc(registerHandler).Export("register_handler").
 		NewFunctionBuilder().WithFunc(registerEventHandler).Export("register_event_handler").

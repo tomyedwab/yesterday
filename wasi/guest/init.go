@@ -2,7 +2,11 @@ package guest
 
 import "github.com/tomyedwab/yesterday/wasi/types"
 
-func Init() {
+//go:wasmimport env init_module
+func init_module(version string)
+
+func Init(version string) {
+	init_module(version)
 	InitSQLProxy()
 	InitBytes()
 	InitRequests()

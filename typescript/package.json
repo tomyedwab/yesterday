@@ -1,0 +1,17 @@
+{
+  "name": "@tomyedwab/yesterday",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Typescript library for interacting with Yesterday's API",
+  "main": "src/index.tsx",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Tom W. Yedwab",
+  "dependencies": {
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2"
+  }
+}

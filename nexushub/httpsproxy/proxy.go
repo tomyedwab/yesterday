@@ -12,16 +12,10 @@ import (
 	"strings" // For string manipulation
 	"time"
 
+	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
+	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
-
-// ProcessManagerInterface defines the methods the HostnameResolver needs
-// from the ProcessManager. This helps in decoupling and testing.
-// It should provide a way to get an AppInstance by its hostname.
-type ProcessManagerInterface interface {
-	GetAppInstanceByHostName(hostname string) (*processes.AppInstance, int, error)
-	GetAppInstanceByID(id string) (*processes.AppInstance, int, error) // Added for AppID lookup
-}
 
 // Proxy represents the HTTPS reverse proxy server.
 // It listens for incoming HTTPS requests, terminates SSL, and proxies them
@@ -38,14 +32,14 @@ type Proxy struct {
 	listenAddr string
 	certFile   string
 	keyFile    string
-	pm         ProcessManagerInterface
+	pm         httpsproxy_types.ProcessManagerInterface
 	server     *http.Server
 }
 
 // NewProxy creates and returns a new Proxy instance.
 // It takes the listen address, paths to SSL cert and key files,
 // and a HostnameResolver instance.
-func NewProxy(listenAddr, certFile, keyFile string, pm ProcessManagerInterface) *Proxy {
+func NewProxy(listenAddr, certFile, keyFile string, pm httpsproxy_types.ProcessManagerInterface) *Proxy {
 	return &Proxy{
 		listenAddr: listenAddr,
 		certFile:   certFile,
@@ -132,37 +126,79 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Successfully resolved %s to instance ID '%s' (Port: %d)", resolutionIdentifier, instance.InstanceID, port)
 	}
 
-	// Check for static file serving
-	if instance.StaticPath != "" {
-		requestedPath := r.URL.Path
-		if requestedPath == "/" {
-			requestedPath = "/index.html" // Map root to index.html
-		}
-
-		filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
-		cleanStaticPath := filepath.Clean(instance.StaticPath)
-		cleanFilePath := filepath.Clean(filePath)
-
-		if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
-			log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for %s (instance ID '%s')", cleanFilePath, r.URL.Path, cleanStaticPath, resolutionIdentifier, instance.InstanceID)
-			http.Error(w, "Forbidden", http.StatusForbidden)
+	if r.URL.Path == "/api/set_token" {
+		// Get token and continue URL from URL parameters
+		token := r.URL.Query().Get("token")
+		continueURL := r.URL.Query().Get("continue")
+		if token == "" || continueURL == "" {
+			http.Error(w, "Missing token or continue URL", http.StatusBadRequest)
 			return
 		}
-
-		fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
-		if statErr == nil {                         // File or directory exists at cleanFilePath
-			if !fileInfo.IsDir() { // It's a file
-				log.Printf("Serving static file %s for %s (instance ID '%s', request path: %s)", cleanFilePath, resolutionIdentifier, instance.InstanceID, r.URL.Path)
-				w.Header().Set("Access-Control-Allow-Origin", "*")
-				w.Header().Set("Access-Control-Allow-Methods", "GET")
-				w.Header().Set("Access-Control-Max-Age", "86400")
-				http.ServeFile(w, r, cleanFilePath)
-				return
-			} else { // It's a directory
-				log.Printf("Requested path %s (resolved to %s) maps to a directory, not a file. Proceeding to proxy for %s (instance ID '%s').", r.URL.Path, cleanFilePath, resolutionIdentifier, instance.InstanceID)
-			}
+		// Set the cookie with the token and redirect to the continue URL
+		targetDomain := r.Host
+		if strings.Contains(targetDomain, ":") {
+			targetDomain = strings.Split(targetDomain, ":")[0]
 		}
-		// If file doesn't exist, is a directory, or another os.Stat error occurred, fall through to proxy logic.
+		w.Header().Set("Set-Cookie", "YRT="+token+"; Path=/; Domain="+targetDomain+"; HttpOnly; Secure; SameSite=None")
+		w.Header().Set("Location", continueURL)
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+	if r.URL.Path == "/api/access_token" {
+		access.HandleAccessTokenRequest(p.pm, instance, w, r)
+		return
+	}
+
+	// TODO(tom) Should this routing be more flexible than just checking for /api/ and /internal/?
+	if !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/internal/") {
+		if instance.DebugPort > 0 {
+			// If debug port is enabled, proxy to the dev server
+			targetURL := &url.URL{
+				Scheme: "http", // Backend services are HTTP
+				Host:   "localhost:" + strconv.Itoa(instance.DebugPort),
+			}
+
+			reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+			// Update the request host to match the target for the reverse proxy.
+			r.Host = targetURL.Host
+
+			log.Printf("Proxying debug request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+			reverseProxy.ServeHTTP(w, r)
+			return
+
+		} else if instance.StaticPath != "" {
+			// Check for static file serving
+			requestedPath := r.URL.Path
+			if requestedPath == "/" {
+				requestedPath = "/index.html" // Map root to index.html
+			}
+
+			filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
+			cleanStaticPath := filepath.Clean(instance.StaticPath)
+			cleanFilePath := filepath.Clean(filePath)
+
+			if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
+				log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for %s (instance ID '%s')", cleanFilePath, r.URL.Path, cleanStaticPath, resolutionIdentifier, instance.InstanceID)
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+
+			fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
+			if statErr == nil {                         // File or directory exists at cleanFilePath
+				if !fileInfo.IsDir() { // It's a file
+					log.Printf("Serving static file %s for %s (instance ID '%s', request path: %s)", cleanFilePath, resolutionIdentifier, instance.InstanceID, r.URL.Path)
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+					w.Header().Set("Access-Control-Allow-Methods", "GET")
+					w.Header().Set("Access-Control-Max-Age", "86400")
+					http.ServeFile(w, r, cleanFilePath)
+					return
+				} else { // It's a directory
+					log.Printf("Requested path %s (resolved to %s) maps to a directory, not a file. Proceeding to proxy for %s (instance ID '%s').", r.URL.Path, cleanFilePath, resolutionIdentifier, instance.InstanceID)
+				}
+			}
+			// If file doesn't exist, is a directory, or another os.Stat error occurred, fall through to proxy logic.
+		}
 	}
 
 	// If not serving a static file, or if checks above decided to fall through, proceed to proxy the request via HTTP.

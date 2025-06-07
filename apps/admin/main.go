@@ -15,35 +15,6 @@ import (
 	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
-func handle_appinfo(params types.RequestParams) types.Response {
-	db, err := sqlx.Connect("sqlproxy", "")
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("sqlx.Connect failed: %v", err))
-	}
-	defer db.Close()
-
-	var request admin_types.AdminAppInfoRequest
-	err = json.Unmarshal([]byte(params.Body), &request)
-	if err != nil {
-		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
-	}
-
-	application, err := state.GetApplication(db, request.ApplicationID)
-	if err != nil {
-		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("invalid application ID %s", request.ApplicationID))
-	}
-
-	ret := admin_types.AdminAppInfoResponse{
-		ApplicationHostName: application.HostName,
-	}
-
-	retJson, err := json.Marshal(ret)
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("error marshaling response: %v", err))
-	}
-	return guest.RespondSuccess(string(retJson))
-}
-
 func handle_dologin(params types.RequestParams) types.Response {
 	db, err := sqlx.Connect("sqlproxy", "")
 	if err != nil {
@@ -55,11 +26,6 @@ func handle_dologin(params types.RequestParams) types.Response {
 	err = json.Unmarshal([]byte(params.Body), &request)
 	if err != nil {
 		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
-	}
-
-	application, err := state.GetApplication(db, request.ApplicationID)
-	if err != nil {
-		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("invalid application ID %s", request.ApplicationID))
 	}
 
 	fmt.Printf("Attempting login for user: %s\n", request.Username)
@@ -84,27 +50,9 @@ func handle_dologin(params types.RequestParams) types.Response {
 		return guest.RespondSuccess(string(retJson))
 	}
 
-	profile, err := state.GetUserProfile(db, user.ID, request.ApplicationID)
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to get user profile: %v", err))
-	}
-	if profile == nil {
-		fmt.Printf("User %s does not have access to application %s\n", request.Username, request.ApplicationID)
-		ret := admin_types.AdminLoginResponse{
-			Success: false,
-		}
-		retJson, err := json.Marshal(ret)
-		if err != nil {
-			return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("error marshaling response: %v", err))
-		}
-		return guest.RespondSuccess(string(retJson))
-	}
-
 	ret := admin_types.AdminLoginResponse{
-		Success:             true,
-		UserID:              user.ID,
-		ApplicationID:       request.ApplicationID,
-		ApplicationHostName: application.HostName,
+		Success: true,
+		UserID:  user.ID,
 	}
 
 	retJson, err := json.Marshal(ret)
@@ -116,11 +64,10 @@ func handle_dologin(params types.RequestParams) types.Response {
 
 //go:wasmexport init
 func init() {
-	guest.Init()
+	guest.Init("0.0.1")
 	guest.RegisterEventHandler(events.DBInitEventType, state.ApplicationsHandleInitEvent)
 	guest.RegisterEventHandler(events.DBInitEventType, state.UsersHandleInitEvent)
 	guest.RegisterEventHandler(events.DBInitEventType, state.UserProfilesHandleInitEvent)
-	guest.RegisterHandler("/internal/appinfo", handle_appinfo)
 	guest.RegisterHandler("/internal/dologin", handle_dologin)
 }
 

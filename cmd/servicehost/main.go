@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -80,6 +81,11 @@ func getHost(ctx context.Context, m api.Module) uint32 {
 	}
 	_, handle := writeBytes(m, []byte(host))
 	return handle
+}
+
+func getTime(ctx context.Context, m api.Module) uint64 {
+	now := time.Now().Unix()
+	return uint64(now)
 }
 
 func writeLog(ctx context.Context, m api.Module, logOffset, logByteCount uint32) {
@@ -315,6 +321,7 @@ func main() {
 	_, err = r.NewHostModuleBuilder("env").
 		NewFunctionBuilder().WithFunc(initModule).Export("init_module").
 		NewFunctionBuilder().WithFunc(getHost).Export("get_host").
+		NewFunctionBuilder().WithFunc(getTime).Export("get_time").
 		NewFunctionBuilder().WithFunc(writeLog).Export("write_log").
 		NewFunctionBuilder().WithFunc(createUUID).Export("create_uuid").
 		NewFunctionBuilder().WithFunc(writeResponse).Export("write_response").

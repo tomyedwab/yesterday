@@ -86,8 +86,7 @@
                 const username = usernameInput.value;
                 const password = passwordInput.value;
 
-                // Call the /api/login endpoint
-                fetch("/api/login", {
+                fetch("/public/login", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",

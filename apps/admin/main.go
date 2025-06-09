@@ -62,13 +62,37 @@ func handle_dologin(params types.RequestParams) types.Response {
 	return guest.RespondSuccess(string(retJson))
 }
 
+func handle_checkaccess(params types.RequestParams) types.Response {
+	db, err := sqlx.Connect("sqlproxy", "")
+	if err != nil {
+		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("sqlx.Connect failed: %v", err))
+	}
+	defer db.Close()
+
+	var request admin_types.AccessRequest
+	err = json.Unmarshal([]byte(params.Body), &request)
+	if err != nil {
+		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
+	}
+
+	accessGranted, err := state.CheckUserAccess(db, request.ApplicationID, request.UserID)
+	if err != nil {
+		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("error checking user access: %v", err))
+	}
+	responseJson, _ := json.Marshal(admin_types.AccessResponse{
+		AccessGranted: accessGranted,
+	})
+	return guest.RespondSuccess(string(responseJson))
+}
+
 //go:wasmexport init
 func init() {
 	guest.Init("0.0.1")
 	guest.RegisterEventHandler(events.DBInitEventType, state.ApplicationsHandleInitEvent)
 	guest.RegisterEventHandler(events.DBInitEventType, state.UsersHandleInitEvent)
-	guest.RegisterEventHandler(events.DBInitEventType, state.UserProfilesHandleInitEvent)
+	guest.RegisterEventHandler(events.DBInitEventType, state.UserAccessRulesHandleInitEvent)
 	guest.RegisterHandler("/internal/dologin", handle_dologin)
+	guest.RegisterHandler("/internal/checkAccess", handle_checkaccess)
 }
 
 // main is required for the `wasi` target, even if it isn't used.

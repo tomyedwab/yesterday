@@ -45,10 +45,11 @@ func HandleAccessTokenRequest(
 	}
 
 	req := types.AccessTokenRequest{
-		RefreshToken: refreshToken.Value,
+		ApplicationID: instance.InstanceID,
+		RefreshToken:  refreshToken.Value,
 	}
 	reqJson, _ := json.Marshal(req)
-	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/api/access_token", loginPort), "application/json", bytes.NewBuffer(reqJson))
+	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/internal/access_token", loginPort), "application/json", bytes.NewBuffer(reqJson))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error while refreshing token: %v", err), http.StatusServiceUnavailable)
 		return

@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	ErrSessionNotFound     = errors.New("session not found")
 	ErrInvalidRefreshToken = errors.New("invalid refresh token")
 	ErrTokenGeneration     = errors.New("failed to generate token")
 	ErrSessionExpired      = errors.New("session expired")
@@ -79,19 +78,14 @@ func (m *SessionManager) DeleteExpiredSessions() error {
 
 // GetAccessToken creates a new access token which is stored in-memory in
 // NexusHub, and rotates the refresh token in the database.
-func (m *SessionManager) CreateAccessToken(request *types.AccessTokenRequest) (*types.AccessTokenResponse, error) {
-	session, err := DBGetSessionByRefreshToken(m.db, request.RefreshToken)
-	if err != nil {
-		return nil, ErrSessionNotFound
-	}
-
-	if time.Since(time.Unix(int64(session.LastRefreshed), 0)) > m.sessionExpiry {
+func (m *SessionManager) CreateAccessToken(session *Session, request *types.AccessTokenRequest) (*types.AccessTokenResponse, error) {
+	if guest.TimeSince(time.Unix(int64(session.LastRefreshed), 0)) > m.sessionExpiry {
 		session.DBDelete(m.db)
 		return nil, ErrSessionExpired
 	}
 
 	// Calculate expiry time
-	expiresAt := time.Now().UTC().Add(m.accessExpiry).Unix()
+	expiresAt := guest.GetTime().Add(m.accessExpiry).Unix()
 
 	// Update the session with the new refresh token
 	refreshToken, err := session.DBUpdateRefreshToken(m.db)
@@ -100,8 +94,9 @@ func (m *SessionManager) CreateAccessToken(request *types.AccessTokenRequest) (*
 	}
 
 	return &types.AccessTokenResponse{
-		Expiry:       expiresAt,
-		RefreshToken: refreshToken,
-		AccessToken:  guest.CreateUUID(),
+		Expiry:        expiresAt,
+		RefreshToken:  refreshToken,
+		AccessToken:   guest.CreateUUID(),
+		ApplicationID: request.ApplicationID,
 	}, nil
 }

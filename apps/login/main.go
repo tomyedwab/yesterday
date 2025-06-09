@@ -61,9 +61,25 @@ func handle_access_token(sessionManager *sessions.SessionManager, params types.R
 		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("invalid request body: %v", err))
 	}
 
-	// TODO(tom) STOPSHIP Validate the user has access to the application
+	session, err := sessionManager.GetSessionByRefreshToken(tokenRequest.RefreshToken)
+	if err != nil || session == nil {
+		return guest.RespondError(http.StatusUnauthorized, fmt.Errorf("invalid refresh token"))
+	}
 
-	response, err := sessionManager.CreateAccessToken(&tokenRequest)
+	accessRequestJson, _ := json.Marshal(&admin_types.AccessRequest{
+		UserID:        session.UserID,
+		ApplicationID: tokenRequest.ApplicationID,
+	})
+	var accessResponse admin_types.AccessResponse
+	statusCode, err := guest.CrossServiceRequest("/internal/checkAccess", "18736e4f-93f9-4606-a7be-863c7986ea5b", accessRequestJson, &accessResponse)
+	if err != nil || statusCode != http.StatusOK {
+		return guest.RespondError(statusCode, fmt.Errorf("failed to make cross-service request: %v", err))
+	}
+	if !accessResponse.AccessGranted {
+		return guest.RespondError(http.StatusForbidden, fmt.Errorf("access denied"))
+	}
+
+	response, err := sessionManager.CreateAccessToken(session, &tokenRequest)
 	if err != nil {
 		return guest.RespondError(http.StatusUnauthorized, err)
 	}
@@ -84,10 +100,10 @@ func init() {
 		log.Fatal(err)
 	}
 
-	guest.RegisterHandler("/api/login", func(params types.RequestParams) types.Response {
+	guest.RegisterHandler("/public/login", func(params types.RequestParams) types.Response {
 		return handle_login(sessionManager, params)
 	})
-	guest.RegisterHandler("/api/access_token", func(params types.RequestParams) types.Response {
+	guest.RegisterHandler("/internal/access_token", func(params types.RequestParams) types.Response {
 		return handle_access_token(sessionManager, params)
 	})
 }

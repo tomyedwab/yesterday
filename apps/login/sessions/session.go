@@ -12,8 +12,6 @@ import (
 	"github.com/tomyedwab/yesterday/wasi/guest"
 )
 
-// TODO(tom) STOPSHIP time.now() is also broken in wasi :(
-
 // FlexibleInt64 can handle both int64 and float64 from database
 type FlexibleInt64 int64
 
@@ -63,7 +61,7 @@ type Session struct {
 func NewSession(userID int, sessionType string) (*Session, error) {
 	sessionID := guest.CreateUUID()
 	refreshToken := guest.CreateUUID()
-	now := FlexibleInt64(time.Now().UTC().Unix())
+	now := FlexibleInt64(guest.GetTime().UTC().Unix())
 	return &Session{
 		ID:            sessionID,
 		UserID:        userID,
@@ -130,7 +128,7 @@ func (s *Session) DBUpdateRefreshToken(db *sqlx.DB) (string, error) {
 		return "", err
 	}
 	s.RefreshToken = refreshToken
-	s.LastRefreshed = FlexibleInt64(time.Now().UTC().Unix())
+	s.LastRefreshed = FlexibleInt64(guest.GetTime().UTC().Unix())
 	_, err = db.Exec("UPDATE sessions SET refresh_token = $1, last_refreshed = $2 WHERE id = $3", s.RefreshToken, s.LastRefreshed, s.ID)
 	return refreshToken, err
 }
@@ -144,7 +142,7 @@ func (s *Session) DBDelete(db *sqlx.DB) error {
 func DBDeleteExpiredSessions(db *sqlx.DB, sessionExpiry time.Duration) error {
 	// Get session IDs that have expired
 	var sessionIDs []string
-	err := db.Select(&sessionIDs, "SELECT id FROM sessions WHERE last_refreshed < $1", FlexibleInt64(time.Now().UTC().Add(-sessionExpiry).Unix()))
+	err := db.Select(&sessionIDs, "SELECT id FROM sessions WHERE last_refreshed < $1", FlexibleInt64(guest.GetTime().UTC().Add(-sessionExpiry).Unix()))
 	if err != nil {
 		return err
 	}

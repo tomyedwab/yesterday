@@ -3,6 +3,7 @@ package httpsproxy
 import (
 	"crypto/tls"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -34,17 +35,28 @@ type Proxy struct {
 	keyFile    string
 	pm         httpsproxy_types.ProcessManagerInterface
 	server     *http.Server
+	transport  *http.Transport
 }
 
 // NewProxy creates and returns a new Proxy instance.
 // It takes the listen address, paths to SSL cert and key files,
 // and a HostnameResolver instance.
 func NewProxy(listenAddr, certFile, keyFile string, pm httpsproxy_types.ProcessManagerInterface) *Proxy {
+	dialer := net.Dialer{
+		Timeout:   600 * time.Second,
+		KeepAlive: 600 * time.Second,
+	}
+	transport := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		Dial:                dialer.Dial,
+		TLSHandshakeTimeout: 180 * time.Second,
+	}
 	return &Proxy{
 		listenAddr: listenAddr,
 		certFile:   certFile,
 		keyFile:    keyFile,
 		pm:         pm,
+		transport:  transport,
 	}
 }
 
@@ -68,8 +80,8 @@ func (p *Proxy) Start() error {
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
@@ -149,71 +161,123 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO(tom) Should this routing be more flexible than just checking for /api/ and /internal/?
-	if !strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasPrefix(r.URL.Path, "/internal/") {
-		if instance.DebugPort > 0 {
-			// If debug port is enabled, proxy to the dev server
-			targetURL := &url.URL{
-				Scheme: "http", // Backend services are HTTP
-				Host:   "localhost:" + strconv.Itoa(instance.DebugPort),
-			}
+	if strings.HasPrefix(r.URL.Path, "/public/") {
+		// Token is valid, proxy the request
+		targetURL := &url.URL{
+			Scheme: "http", // Backend services are HTTP
+			Host:   "localhost:" + strconv.Itoa(port),
+		}
 
-			reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.Transport = p.transport
+		r.Host = targetURL.Host
 
-			// Update the request host to match the target for the reverse proxy.
-			r.Host = targetURL.Host
+		log.Printf("Proxying public API request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		reverseProxy.ServeHTTP(w, r)
+		return
+	}
 
-			log.Printf("Proxying debug request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
-			reverseProxy.ServeHTTP(w, r)
+	// Handle /api/ paths with authorization
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		// Validate authorization for API endpoints
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			log.Printf("Missing or invalid Authorization header for API request %s (%s)", r.URL.Path, resolutionIdentifier)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
+		}
 
-		} else if instance.StaticPath != "" {
-			// Check for static file serving
-			requestedPath := r.URL.Path
-			if requestedPath == "/" {
-				requestedPath = "/index.html" // Map root to index.html
-			}
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		valid := access.ValidateAccessToken(token, instance.InstanceID)
+		if !valid {
+			log.Printf("Invalid access token for API request %s (%s)", r.URL.Path, resolutionIdentifier)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
-			filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
-			cleanStaticPath := filepath.Clean(instance.StaticPath)
-			cleanFilePath := filepath.Clean(filePath)
+		// Token is valid, proxy the request
+		targetURL := &url.URL{
+			Scheme: "http", // Backend services are HTTP
+			Host:   "localhost:" + strconv.Itoa(port),
+		}
 
-			if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
-				log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for %s (instance ID '%s')", cleanFilePath, r.URL.Path, cleanStaticPath, resolutionIdentifier, instance.InstanceID)
-				http.Error(w, "Forbidden", http.StatusForbidden)
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.Transport = p.transport
+		r.Host = targetURL.Host
+
+		log.Printf("Proxying authorized API request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		reverseProxy.ServeHTTP(w, r)
+		return
+	}
+
+	// Handle /internal/ paths
+	if strings.HasPrefix(r.URL.Path, "/internal/") {
+		// TODO: (STOPSHIP) Implement authorization for internal endpoints
+		targetURL := &url.URL{
+			Scheme: "http", // Backend services are HTTP
+			Host:   "localhost:" + strconv.Itoa(port),
+		}
+
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.Transport = p.transport
+		r.Host = targetURL.Host
+
+		log.Printf("Proxying internal request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		reverseProxy.ServeHTTP(w, r)
+		return
+	}
+
+	// Handle other paths through DebugPort and StaticPath checks
+	if instance.DebugPort > 0 {
+		// If debug port is enabled, proxy to the dev server
+		targetURL := &url.URL{
+			Scheme: "http", // Backend services are HTTP
+			Host:   "localhost:" + strconv.Itoa(instance.DebugPort),
+		}
+
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+		// Update the request host to match the target for the reverse proxy.
+		r.Host = targetURL.Host
+
+		log.Printf("Proxying debug request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		reverseProxy.ServeHTTP(w, r)
+		return
+
+	} else if instance.StaticPath != "" {
+		// Check for static file serving
+		requestedPath := r.URL.Path
+		if requestedPath == "/" {
+			requestedPath = "/index.html" // Map root to index.html
+		}
+
+		filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
+		cleanStaticPath := filepath.Clean(instance.StaticPath)
+		cleanFilePath := filepath.Clean(filePath)
+
+		if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
+			log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for %s (instance ID '%s')", cleanFilePath, r.URL.Path, cleanStaticPath, resolutionIdentifier, instance.InstanceID)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
+		if statErr == nil {                         // File or directory exists at cleanFilePath
+			if !fileInfo.IsDir() { // It's a file
+				log.Printf("Serving static file %s for %s (instance ID '%s', request path: %s)", cleanFilePath, resolutionIdentifier, instance.InstanceID, r.URL.Path)
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET")
+				w.Header().Set("Access-Control-Max-Age", "86400")
+				http.ServeFile(w, r, cleanFilePath)
 				return
 			}
-
-			fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
-			if statErr == nil {                         // File or directory exists at cleanFilePath
-				if !fileInfo.IsDir() { // It's a file
-					log.Printf("Serving static file %s for %s (instance ID '%s', request path: %s)", cleanFilePath, resolutionIdentifier, instance.InstanceID, r.URL.Path)
-					w.Header().Set("Access-Control-Allow-Origin", "*")
-					w.Header().Set("Access-Control-Allow-Methods", "GET")
-					w.Header().Set("Access-Control-Max-Age", "86400")
-					http.ServeFile(w, r, cleanFilePath)
-					return
-				} else { // It's a directory
-					log.Printf("Requested path %s (resolved to %s) maps to a directory, not a file. Proceeding to proxy for %s (instance ID '%s').", r.URL.Path, cleanFilePath, resolutionIdentifier, instance.InstanceID)
-				}
-			}
-			// If file doesn't exist, is a directory, or another os.Stat error occurred, fall through to proxy logic.
 		}
+		// If file doesn't exist or is a directory, fall through to 404
 	}
 
-	// If not serving a static file, or if checks above decided to fall through, proceed to proxy the request via HTTP.
-	targetURL := &url.URL{
-		Scheme: "http", // Backend services are HTTP
-		Host:   "localhost:" + strconv.Itoa(port),
-	}
-
-	reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-
-	// Update the request host to match the target for the reverse proxy.
-	r.Host = targetURL.Host
-
-	log.Printf("Proxying request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
-	reverseProxy.ServeHTTP(w, r)
+	// No matching route found
+	log.Printf("No route found for request %s (%s)", r.URL.Path, resolutionIdentifier)
+	http.Error(w, "Not Found", http.StatusNotFound)
 }
 
 // Stop gracefully shuts down the proxy server.

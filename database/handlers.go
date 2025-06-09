@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/tomyedwab/yesterday/database/events"
-	"github.com/tomyedwab/yesterday/database/middleware"
-	"github.com/tomyedwab/yesterday/users/util"
 )
 
 func waitForEventId(w http.ResponseWriter, r *http.Request, eventState *events.EventState) bool {
@@ -64,84 +62,57 @@ func (db *Database) InitHandlers() {
 	}
 	eventState := events.NewEventState(initialEventId)
 
-	/*
-		http.HandleFunc("/api/status", middleware.ApplyDefault(
-			func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprintf(w, "ok")
-			},
-		))
-	*/
+	http.HandleFunc("/api/publish", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			w.Header().Set("Access-Control-Allow-Methods", "POST")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			return
+		}
+		if r.Method != "POST" {
+			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+		clientId := r.URL.Query().Get("cid")
+		if clientId == "" {
+			http.Error(w, "Missing client ID", http.StatusBadRequest)
+			return
+		}
 
-	http.HandleFunc("/api/publish", middleware.ApplyDefault(
-		func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == "OPTIONS" {
-				w.Header().Set("Access-Control-Allow-Methods", "POST")
-				w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-				return
-			}
-			if r.Method != "POST" {
-				http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-				return
-			}
-			clientId := r.URL.Query().Get("cid")
-			if clientId == "" {
-				http.Error(w, "Missing client ID", http.StatusBadRequest)
-				return
-			}
+		buf, err := io.ReadAll(r.Body)
+		if err != nil {
+			HandleAPIResponse(w, r, nil, err)
+			return
+		}
 
-			buf, err := io.ReadAll(r.Body)
-			if err != nil {
-				HandleAPIResponse(w, r, nil, err)
+		var event events.GenericEvent
+		if err := json.Unmarshal(buf, &event); err != nil {
+			HandleAPIResponse(w, r, nil, err)
+			return
+		}
+
+		newEventId, err := db.CreateEvent(&event, buf, clientId)
+		if err == nil {
+			eventState.SetCurrentEventId(newEventId)
+		}
+		if err != nil {
+			// Special case for duplicate errors. We return a 200 in this case.
+			if duplicateErr, ok := err.(*DuplicateEventError); ok {
+				HandleAPIResponse(w, r, map[string]interface{}{"status": "duplicate", "id": duplicateErr.Id, "clientId": clientId}, nil)
 				return
 			}
+		}
+		HandleAPIResponse(w, r, map[string]interface{}{"status": "success", "id": newEventId, "clientId": clientId}, err)
+	})
 
-			var event events.GenericEvent
-			if err := json.Unmarshal(buf, &event); err != nil {
-				HandleAPIResponse(w, r, nil, err)
-				return
-			}
-
-			newEventId, err := db.CreateEvent(&event, buf, clientId)
-			if err == nil {
-				eventState.SetCurrentEventId(newEventId)
-			}
-			if err != nil {
-				// Special case for duplicate errors. We return a 200 in this case.
-				if duplicateErr, ok := err.(*DuplicateEventError); ok {
-					HandleAPIResponse(w, r, map[string]interface{}{"status": "duplicate", "id": duplicateErr.Id, "clientId": clientId}, nil)
-					return
-				}
-			}
-			HandleAPIResponse(w, r, map[string]interface{}{"status": "success", "id": newEventId, "clientId": clientId}, err)
-		},
-	))
-
-	http.HandleFunc("/api/poll", middleware.ApplyDefault(
-		func(w http.ResponseWriter, r *http.Request) {
-			if !waitForEventId(w, r, eventState) {
-				return
-			}
-			HandleAPIResponse(w, r, map[string]interface{}{
-				"id":      eventState.CurrentEventId,
-				"version": db.version,
-			}, nil)
-		},
-	))
-
-	http.HandleFunc("/api/profile", middleware.ApplyDefault(
-		func(w http.ResponseWriter, r *http.Request) {
-			claims := r.Context().Value(util.ClaimsKey).(*util.YesterdayUserClaims)
-			var profileData map[string]interface{}
-			err := json.Unmarshal([]byte(claims.Profile), &profileData)
-			if err != nil {
-				http.Error(w, "Failed to unmarshal profile data", http.StatusInternalServerError)
-				return
-			}
-			HandleAPIResponse(w, r, map[string]interface{}{
-				"profile": profileData,
-			}, nil)
-		},
-	))
+	http.HandleFunc("/api/poll", func(w http.ResponseWriter, r *http.Request) {
+		if !waitForEventId(w, r, eventState) {
+			return
+		}
+		HandleAPIResponse(w, r, map[string]interface{}{
+			"id":      eventState.CurrentEventId,
+			"version": db.version,
+		}, nil)
+	})
 
 	// Special case for internally-generated events
 	db.PublishEventCB = func(event events.Event) error {

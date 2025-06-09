@@ -1,11 +1,13 @@
 package types
 
 type AccessTokenRequest struct {
-	RefreshToken string
+	RefreshToken  string
+	ApplicationID string
 }
 
 type AccessTokenResponse struct {
-	Expiry       int64
-	RefreshToken string
-	AccessToken  string
+	Expiry        int64
+	RefreshToken  string
+	AccessToken   string
+	ApplicationID string
 }

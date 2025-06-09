@@ -15,21 +15,24 @@ type AccessToken struct {
 
 var AccessTokenStore = make(map[string]AccessToken)
 
-// TODO(tom) STOPSHIP Track associated application ID
 func createAccessToken(response *types.AccessTokenResponse) {
 	AccessTokenStore[response.AccessToken] = AccessToken{
-		AccessToken: response.AccessToken,
-		Expiry:      response.Expiry,
+		AccessToken:   response.AccessToken,
+		ApplicationID: response.ApplicationID,
+		Expiry:        response.Expiry,
 	}
 }
 
-func ValidateAccessToken(token string) bool {
+func ValidateAccessToken(token, applicationID string) bool {
 	_, ok := AccessTokenStore[token]
 	if !ok {
 		return false
 	}
 	if time.Now().Unix() > AccessTokenStore[token].Expiry {
 		delete(AccessTokenStore, token)
+		return false
+	}
+	if AccessTokenStore[token].ApplicationID != applicationID {
 		return false
 	}
 	return true

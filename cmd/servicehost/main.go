@@ -35,7 +35,6 @@ type ContextKey int
 
 const (
 	ContextKeyRequest ContextKey = iota
-	ContextKeyHost
 	ContextKeyDB
 	ContextKeySqliteHost
 )
@@ -74,12 +73,10 @@ func initModule(ctx context.Context, m api.Module, versionOffset, versionByteCou
 	db.SetVersion(string(readBytes(m, versionOffset, versionByteCount)))
 }
 
-func getHost(ctx context.Context, m api.Module) uint32 {
-	host := ctx.Value(ContextKeyHost).(string)
-	if host == "" {
-		log.Fatal("Host must be provided via -host flag")
-	}
-	_, handle := writeBytes(m, []byte(host))
+func getEnv(ctx context.Context, m api.Module, keyOffset, keyByteCount uint32) uint32 {
+	key := string(readBytes(m, keyOffset, keyByteCount))
+	value := os.Getenv(key)
+	_, handle := writeBytes(m, []byte(value))
 	return handle
 }
 
@@ -247,6 +244,7 @@ func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, re
 		Header: http.Header{
 			"Content-Type":     []string{"application/json"},
 			"X-Application-Id": []string{crossServiceRequest.ApplicationID},
+			"Authorization":    []string{"Bearer " + os.Getenv("INTERNAL_SECRET")},
 		},
 		Body: io.NopCloser(bytes.NewReader([]byte(crossServiceRequest.Body))),
 	}
@@ -285,7 +283,6 @@ func main() {
 	// TODO(tom): More flexible configuration sharing from nexushub
 	wasmFile := flag.String("wasm", "", "Path to the WASM file to load")
 	dbPathFlag := flag.String("dbPath", "", "Path to the SQLite database file")
-	hostFlag := flag.String("host", "", "Host for the HTTP server")
 	port := flag.Int("port", 8080, "Port for the HTTP server")
 	flag.Parse()
 
@@ -295,10 +292,6 @@ func main() {
 
 	if *dbPathFlag == "" {
 		log.Fatal("Database path must be provided via -dbPath flag")
-	}
-
-	if *hostFlag == "" {
-		log.Fatal("Host must be provided via -host flag")
 	}
 
 	wasmBytes, err := os.ReadFile(*wasmFile)
@@ -318,7 +311,6 @@ func main() {
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, ContextKeyDB, db)
 	ctx = context.WithValue(ctx, ContextKeySqliteHost, sqliteHost)
-	ctx = context.WithValue(ctx, ContextKeyHost, *hostFlag)
 
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
@@ -326,7 +318,7 @@ func main() {
 
 	_, err = r.NewHostModuleBuilder("env").
 		NewFunctionBuilder().WithFunc(initModule).Export("init_module").
-		NewFunctionBuilder().WithFunc(getHost).Export("get_host").
+		NewFunctionBuilder().WithFunc(getEnv).Export("get_env").
 		NewFunctionBuilder().WithFunc(getTime).Export("get_time").
 		NewFunctionBuilder().WithFunc(writeLog).Export("write_log").
 		NewFunctionBuilder().WithFunc(createUUID).Export("create_uuid").

@@ -30,18 +30,19 @@ import (
 // appropriate HTTP error codes are returned (404 or 503).
 // Errors during startup (e.g., loading certificates) are logged and cause a panic.
 type Proxy struct {
-	listenAddr string
-	certFile   string
-	keyFile    string
-	pm         httpsproxy_types.ProcessManagerInterface
-	server     *http.Server
-	transport  *http.Transport
+	listenAddr     string
+	certFile       string
+	keyFile        string
+	pm             httpsproxy_types.ProcessManagerInterface
+	server         *http.Server
+	transport      *http.Transport
+	internalSecret string
 }
 
 // NewProxy creates and returns a new Proxy instance.
 // It takes the listen address, paths to SSL cert and key files,
 // and a HostnameResolver instance.
-func NewProxy(listenAddr, certFile, keyFile string, pm httpsproxy_types.ProcessManagerInterface) *Proxy {
+func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsproxy_types.ProcessManagerInterface) *Proxy {
 	dialer := net.Dialer{
 		Timeout:   600 * time.Second,
 		KeepAlive: 600 * time.Second,
@@ -52,11 +53,12 @@ func NewProxy(listenAddr, certFile, keyFile string, pm httpsproxy_types.ProcessM
 		TLSHandshakeTimeout: 180 * time.Second,
 	}
 	return &Proxy{
-		listenAddr: listenAddr,
-		certFile:   certFile,
-		keyFile:    keyFile,
-		pm:         pm,
-		transport:  transport,
+		listenAddr:     listenAddr,
+		certFile:       certFile,
+		keyFile:        keyFile,
+		pm:             pm,
+		transport:      transport,
+		internalSecret: internalSecret,
 	}
 }
 
@@ -212,7 +214,11 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Handle /internal/ paths
 	if strings.HasPrefix(r.URL.Path, "/internal/") {
-		// TODO: (STOPSHIP) Implement authorization for internal endpoints
+		if r.Header.Get("Authorization") != "Bearer "+p.internalSecret {
+			log.Printf("Invalid authorization header for internal request %s (%s)", r.URL.Path, resolutionIdentifier)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		targetURL := &url.URL{
 			Scheme: "http", // Backend services are HTTP
 			Host:   "localhost:" + strconv.Itoa(port),

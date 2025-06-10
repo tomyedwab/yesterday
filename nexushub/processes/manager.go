@@ -47,6 +47,7 @@ type ProcessManager struct {
 	restartBackoffInitial  time.Duration // Initial delay for restart backoff
 	restartBackoffMax      time.Duration // Maximum delay for restart backoff
 	gracefulShutdownPeriod time.Duration // Time to wait for graceful shutdown before SIGKILL
+	internalSecret         string        // Secret for authorizing cross-service requests
 
 	// Control channels
 	stopChan chan struct{}  // Signals the manager to stop
@@ -72,7 +73,7 @@ type Config struct {
 }
 
 // NewProcessManager creates a new ProcessManager instance.
-func NewProcessManager(config Config) (*ProcessManager, error) {
+func NewProcessManager(config Config, internalSecret string) (*ProcessManager, error) {
 	if config.AppProvider == nil {
 		return nil, fmt.Errorf("AppInstanceProvider is required")
 	}
@@ -137,6 +138,7 @@ func NewProcessManager(config Config) (*ProcessManager, error) {
 		gracefulShutdownPeriod: gracefulShutdown,
 		stopChan:               make(chan struct{}),
 		subprocessWorkDir:      workDir,
+		internalSecret:         internalSecret,
 	}
 
 	return pm, nil
@@ -410,11 +412,13 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 	cmdArgs := []string{
 		"-wasm", instance.WasmPath,
 		"-dbPath", instance.DbName,
-		"-host", instance.HostName,
 		"-port", fmt.Sprintf("%d", port),
 	}
 
 	cmd := exec.CommandContext(ctx, serviceHostExecutable, cmdArgs...)
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, fmt.Sprintf("HOST=%s", instance.HostName))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("INTERNAL_SECRET=%s", pm.internalSecret))
 	cmd.Dir = pm.subprocessWorkDir
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {

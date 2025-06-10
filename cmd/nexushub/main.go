@@ -10,6 +10,7 @@ import (
 
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
@@ -59,6 +60,8 @@ func main() {
 	}
 	logger.Info("Project root", "path", projectRoot)
 
+	internalSecret := uuid.New().String()
+
 	pmConfig := processes.Config{
 		AppProvider:            appProvider,
 		PortManager:            portManager,
@@ -72,7 +75,7 @@ func main() {
 		SubprocessWorkDir:      projectRoot, // Processes will run from the project root
 	}
 
-	processManager, err := processes.NewProcessManager(pmConfig)
+	processManager, err := processes.NewProcessManager(pmConfig, internalSecret)
 	if err != nil {
 		logger.Error("Failed to create ProcessManager", "error", err)
 		os.Exit(1)
@@ -126,7 +129,7 @@ func main() {
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
-	httpProxy = httpsproxy.NewProxy(proxyListenAddr, proxyCertFile, proxyKeyFile, processManager)
+	httpProxy = httpsproxy.NewProxy(proxyListenAddr, proxyCertFile, proxyKeyFile, internalSecret, processManager)
 
 	// 7. Start the HTTPS Proxy server in a goroutine
 	go func() {

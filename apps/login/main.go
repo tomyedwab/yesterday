@@ -56,7 +56,7 @@ func handle_login(sessionManager *sessions.SessionManager, params types.RequestP
 		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to create app session: %v", err))
 	}
 
-	domain := guest.GetHost()
+	domain := guest.GetEnv("HOST")
 	// Strip port number if it's in the host string
 	if strings.Contains(domain, ":") {
 		domain = strings.Split(domain, ":")[0]

@@ -53,10 +53,34 @@
                 margin-top: 1rem;
                 text-align: center;
             }
+            .spinner {
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #007bff;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 20px auto;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+            .loading-container {
+                text-align: center;
+            }
         </style>
     </head>
     <body>
-        <form id="loginForm">
+        <div id="loadingContainer" class="loading-container">
+            <div class="spinner"></div>
+            <p>Checking login status...</p>
+        </div>
+        <form id="loginForm" style="display: none">
             <h2 id="loginMessage">Log in to Nexus Hub</h2>
             <div>
                 <label for="username">Username:</label>
@@ -74,12 +98,51 @@
             const errorMessage = document.getElementById("errorMessage");
             const usernameInput = document.getElementById("username");
             const passwordInput = document.getElementById("password");
+            const loadingContainer =
+                document.getElementById("loadingContainer");
+
+            // Check if already logged in on page load
+            function checkLoginStatus() {
+                fetch("/public/login", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({}),
+                })
+                    .then(async (response) => {
+                        if (response.ok) {
+                            // Already logged in - redirect
+                            const urlParams = new URLSearchParams(
+                                window.location.search,
+                            );
+                            const result = await response.json();
+                            if (urlParams.get("continue")) {
+                                const continueUrl = urlParams.get("continue");
+                                const destUrl = new URL(continueUrl);
+                                window.location.href = `https://${destUrl.hostname}:${destUrl.port}/api/set_token?token=${result.app_refresh_token}&continue=${continueUrl}`;
+                            } else {
+                                window.location.href = "/success.html";
+                            }
+                        } else {
+                            // Not logged in - show the form
+                            loadingContainer.style.display = "none";
+                            form.style.display = "block";
+                        }
+                    })
+                    .catch((error) => {
+                        // Error checking login status - show the form
+                        console.error("Login check error:", error);
+                        loadingContainer.style.display = "none";
+                        form.style.display = "block";
+                    });
+            }
+
+            // Call checkLoginStatus when page loads
+            checkLoginStatus();
 
             function doLogin(event) {
                 event.preventDefault(); // Prevent default form submission
-
-                // TODO(tom) STOPSHIP - If we're already logged in, redirect to
-                // /api/set_token immediately
 
                 errorMessage.style.display = "none"; // Hide error message initially
 

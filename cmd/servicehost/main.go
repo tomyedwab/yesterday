@@ -115,10 +115,16 @@ func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount 
 			return
 		}
 
+		cookieMap := make(map[string]string)
+		for _, cookie := range r.Cookies() {
+			cookieMap[cookie.Name] = cookie.Value
+		}
+
 		params := types.RequestParams{
 			Path:     r.URL.Path,
 			RawQuery: r.URL.RawQuery,
 			Body:     string(bodyBytes),
+			Cookies:  cookieMap,
 		}
 		jsonBytes, _ := json.Marshal(params)
 		freeFn, handle := writeBytes(m, jsonBytes)

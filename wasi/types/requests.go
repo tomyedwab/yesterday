@@ -6,6 +6,7 @@ type RequestParams struct {
 	Path     string
 	RawQuery string
 	Body     string
+	Cookies  map[string]string
 }
 
 type Response struct {

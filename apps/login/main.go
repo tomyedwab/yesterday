@@ -18,23 +18,40 @@ import (
 )
 
 func handle_login(sessionManager *sessions.SessionManager, params types.RequestParams) types.Response {
-	// Make a cross-service request to the admin service to verify username/password
-	var loginResponse admin_types.AdminLoginResponse
-	statusCode, err := guest.CrossServiceRequest("/internal/dologin", "18736e4f-93f9-4606-a7be-863c7986ea5b", []byte(params.Body), &loginResponse)
-	if err != nil {
-		return guest.RespondError(statusCode, fmt.Errorf("failed to make cross-service request: %v", err))
+	var loginSession *sessions.Session
+	var err error
+	if refreshToken, ok := params.Cookies["YRT"]; ok {
+		// If a refresh token is passed in, then the user is already logged in,
+		// so just look up their login session and generate a new session for
+		// the application
+		loginSession, err = sessionManager.GetSessionByRefreshToken(refreshToken)
+		if err != nil {
+			return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to look up refresh token: %v", err))
+		}
+		if loginSession == nil {
+			return guest.RespondError(http.StatusUnauthorized, fmt.Errorf("invalid refresh token"))
+		}
+	} else {
+		// If there is no refresh token, then we expect a username and password.
+		// Make a cross-service request to the admin service to verify the
+		// credentials before creating a new login session.
+		var loginResponse admin_types.AdminLoginResponse
+		statusCode, err := guest.CrossServiceRequest("/internal/dologin", "18736e4f-93f9-4606-a7be-863c7986ea5b", []byte(params.Body), &loginResponse)
+		if err != nil {
+			return guest.RespondError(statusCode, fmt.Errorf("failed to make cross-service request: %v", err))
+		}
+
+		if !loginResponse.Success {
+			return guest.RespondError(http.StatusUnauthorized, fmt.Errorf("invalid username or password"))
+		}
+
+		loginSession, err = sessionManager.CreateSession(loginResponse.UserID, "login")
+		if err != nil {
+			return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to create login session: %v", err))
+		}
 	}
 
-	if !loginResponse.Success {
-		return guest.RespondError(http.StatusUnauthorized, fmt.Errorf("invalid username or password"))
-	}
-
-	loginSession, err := sessionManager.CreateSession(loginResponse.UserID, "login")
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to create login session: %v", err))
-	}
-
-	appSession, err := sessionManager.CreateSession(loginResponse.UserID, "app")
+	appSession, err := sessionManager.CreateSession(loginSession.UserID, "app")
 	if err != nil {
 		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to create app session: %v", err))
 	}

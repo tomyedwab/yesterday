@@ -18,7 +18,7 @@ async function refreshAccessToken() {
         respData.login_url + "?continue=" + window.location.href;
     }
   } else {
-    // TODO(tom) STOPSHIP Handle errors?
+    // Errors will get handled gracefully elsewhere.
   }
 }
 

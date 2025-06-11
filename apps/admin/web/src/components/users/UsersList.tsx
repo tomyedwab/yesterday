@@ -1,9 +1,55 @@
 import { Box, Table, Text, Badge, Button, HStack, Spinner, Alert } from "@chakra-ui/react";
 import { LuPencilLine, LuTrash2, LuKey } from "react-icons/lu";
-import { useUsersView } from "../../dataviews/users";
+import { useState } from "react";
+import { useUsersView, type User } from "../../dataviews/users";
+import { EditUserModal } from "./EditUserModal";
+import { ChangePasswordModal } from "./ChangePasswordModal";
+import { DeleteUserModal } from "./DeleteUserModal";
+import { toaster } from "../ui/toaster";
 
 export const UsersList = () => {
   const [loading, users] = useUsersView();
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  const handleEditUser = (user: User) => {
+    setSelectedUser(user);
+    setEditModalOpen(true);
+  };
+
+  const handleChangePassword = (user: User) => {
+    setSelectedUser(user);
+    setPasswordModalOpen(true);
+  };
+
+  const handleDeleteUser = (user: User) => {
+    setSelectedUser(user);
+    setDeleteModalOpen(true);
+  };
+
+  const closeModals = () => {
+    setEditModalOpen(false);
+    setPasswordModalOpen(false);
+    setDeleteModalOpen(false);
+    setSelectedUser(null);
+  };
+
+  const handleSuccess = (action: string) => {
+    closeModals();
+    
+    // Show success toast
+    toaster.create({
+      title: "Success",
+      description: `User ${action} successfully`,
+      duration: 3000,
+    });
+    
+    // The Yesterday framework handles data refresh automatically via events
+  };
+
+
 
   if (loading) {
     return (
@@ -64,7 +110,8 @@ export const UsersList = () => {
                     size="sm"
                     variant="ghost"
                     colorScheme="blue"
-                    disabled
+                    onClick={() => handleEditUser(user)}
+                    disabled={user.id === 1}
                   >
                     <LuPencilLine />
                     Edit
@@ -73,7 +120,7 @@ export const UsersList = () => {
                     size="sm"
                     variant="ghost"
                     colorScheme="orange"
-                    disabled
+                    onClick={() => handleChangePassword(user)}
                   >
                     <LuKey />
                     Password
@@ -83,6 +130,7 @@ export const UsersList = () => {
                     variant="ghost"
                     colorScheme="red"
                     disabled={user.username === "admin"}
+                    onClick={() => handleDeleteUser(user)}
                   >
                     <LuTrash2 />
                     Delete
@@ -93,6 +141,27 @@ export const UsersList = () => {
           ))}
         </Table.Body>
       </Table.Root>
+      {/* Modals */}
+      <EditUserModal
+        isOpen={editModalOpen}
+        onClose={closeModals}
+        user={selectedUser}
+        onSuccess={() => handleSuccess("updated")}
+      />
+      
+      <ChangePasswordModal
+        isOpen={passwordModalOpen}
+        onClose={closeModals}
+        user={selectedUser}
+        onSuccess={() => handleSuccess("password changed")}
+      />
+      
+      <DeleteUserModal
+        isOpen={deleteModalOpen}
+        onClose={closeModals}
+        user={selectedUser}
+        onSuccess={() => handleSuccess("deleted")}
+      />
     </Box>
   );
 };

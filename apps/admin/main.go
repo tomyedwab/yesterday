@@ -1,98 +1,40 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"net/http"
-
 	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/apps/admin/login"
 	"github.com/tomyedwab/yesterday/apps/admin/state"
-	admin_types "github.com/tomyedwab/yesterday/apps/admin/types"
 	"github.com/tomyedwab/yesterday/database/events"
 	"github.com/tomyedwab/yesterday/wasi/guest"
 	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
-func handle_dologin(params types.RequestParams) types.Response {
-	db, err := sqlx.Connect("sqlproxy", "")
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("sqlx.Connect failed: %v", err))
-	}
-	defer db.Close()
-
-	var request admin_types.AdminLoginRequest
-	err = json.Unmarshal([]byte(params.Body), &request)
-	if err != nil {
-		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
-	}
-
-	fmt.Printf("Attempting login for user: %s\n", request.Username)
-	user, err := state.GetUser(db, request.Username)
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("failed to get user %s: %w", request.Username, err))
-	}
-
-	hasher := sha256.New()
-	hasher.Write([]byte(user.Salt + request.Password))
-	passwordHash := hex.EncodeToString(hasher.Sum(nil))
-
-	if user.PasswordHash != passwordHash {
-		fmt.Printf("Invalid password for user %s\n", request.Username)
-		ret := admin_types.AdminLoginResponse{
-			Success: false,
-		}
-		retJson, err := json.Marshal(ret)
-		if err != nil {
-			return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("error marshaling response: %v", err))
-		}
-		return guest.RespondSuccess(string(retJson))
-	}
-
-	ret := admin_types.AdminLoginResponse{
-		Success: true,
-		UserID:  user.ID,
-	}
-
-	retJson, err := json.Marshal(ret)
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("error marshaling response: %v", err))
-	}
-	return guest.RespondSuccess(string(retJson))
-}
-
-func handle_checkaccess(params types.RequestParams) types.Response {
-	db, err := sqlx.Connect("sqlproxy", "")
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("sqlx.Connect failed: %v", err))
-	}
-	defer db.Close()
-
-	var request admin_types.AccessRequest
-	err = json.Unmarshal([]byte(params.Body), &request)
-	if err != nil {
-		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
-	}
-
-	accessGranted, err := state.CheckUserAccess(db, request.ApplicationID, request.UserID)
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("error checking user access: %v", err))
-	}
-	responseJson, _ := json.Marshal(admin_types.AccessResponse{
-		AccessGranted: accessGranted,
-	})
-	return guest.RespondSuccess(string(responseJson))
-}
-
 //go:wasmexport init
 func init() {
 	guest.Init("0.0.1")
+
+	db, err := sqlx.Connect("sqlproxy", "")
+	if err != nil {
+		panic("cannot connect to sqlproxy")
+	}
+
+	// Internal login functionality, used by the login service
+	guest.RegisterHandler("/internal/dologin", login.HandleDoLogin)
+	guest.RegisterHandler("/internal/checkAccess", login.HandleCheckAccess)
+
+	// Register event handlers
 	guest.RegisterEventHandler(events.DBInitEventType, state.ApplicationsHandleInitEvent)
 	guest.RegisterEventHandler(events.DBInitEventType, state.UsersHandleInitEvent)
+	guest.RegisterEventHandler(state.UserAddedEventType, state.UsersHandleAddedEvent)
 	guest.RegisterEventHandler(events.DBInitEventType, state.UserAccessRulesHandleInitEvent)
-	guest.RegisterHandler("/internal/dologin", handle_dologin)
-	guest.RegisterHandler("/internal/checkAccess", handle_checkaccess)
+
+	// Register data views
+	guest.RegisterHandler("/api/users", func(params types.RequestParams) types.Response {
+		ret, err := state.GetUsers(db)
+		return guest.CreateResponse(map[string]any{
+			"users": ret,
+		}, err, "Error fetching users")
+	})
 }
 
 // main is required for the `wasi` target, even if it isn't used.

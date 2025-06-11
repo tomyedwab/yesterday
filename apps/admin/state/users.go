@@ -8,13 +8,41 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/database/events"
+	"github.com/tomyedwab/yesterday/wasi/guest"
 )
 
 type User struct {
-	ID           int    `db:"id"`
-	Username     string `db:"username"`
-	Salt         string `db:"salt"`
-	PasswordHash string `db:"password_hash"`
+	ID           int    `db:"id" json:"id"`
+	Username     string `db:"username" json:"username"`
+	Salt         string `db:"salt" json:"-"`
+	PasswordHash string `db:"password_hash" json:"-"`
+}
+
+const UserAddedEventType string = "AddUser"
+const UpdateUserPasswordEventType string = "UpdateUserPassword"
+const DeleteUserEventType string = "DeleteUser"
+const UpdateUserEventType string = "UpdateUser"
+
+type UserAddedEvent struct {
+	events.GenericEvent
+	Username string `json:"username"`
+}
+
+type UpdateUserPasswordEvent struct {
+	events.GenericEvent
+	UserID      int    `json:"user_id"`
+	NewPassword string `json:"new_password"`
+}
+
+type DeleteUserEvent struct {
+	events.GenericEvent
+	UserID int `json:"user_id"`
+}
+
+type UpdateUserEvent struct {
+	events.GenericEvent
+	UserID   int    `json:"user_id"`
+	Username string `json:"username"`
 }
 
 // -- DB Helpers --
@@ -57,4 +85,29 @@ func UsersHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) 
 
 	fmt.Println("User tables initialized.")
 	return true, nil
+}
+
+func UsersHandleAddedEvent(tx *sqlx.Tx, event *UserAddedEvent) (bool, error) {
+	guest.WriteLog(fmt.Sprintf("Adding user: %s", event.Username))
+	// Create random salt
+	salt := uuid.New().String()
+	_, err := tx.Exec(`INSERT INTO users_v1 (username, salt, password_hash) VALUES ($1, $2, $3)`,
+		event.Username, salt, "")
+	if err != nil {
+		// Consider UNIQUE constraint violation etc.
+		return false, fmt.Errorf("failed to insert user %s: %w", event.Username, err)
+	}
+	return true, nil
+}
+
+// -- Getters --
+
+func GetUsers(db *sqlx.DB) ([]User, error) {
+	ret := []User{}
+	err := db.Select(&ret, "SELECT id, username FROM users_v1")
+	if err != nil {
+		return ret, fmt.Errorf("failed to select all users: %v", err)
+	}
+
+	return ret, nil
 }

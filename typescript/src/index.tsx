@@ -2,6 +2,14 @@ import {
   ConnectionStateProvider,
   useConnectionState,
   useConnectionDispatch,
+  CreatePendingEvent,
 } from "./connection-state";
+import useDataView from "./dataview";
 
-export { ConnectionStateProvider, useConnectionState, useConnectionDispatch };
+export {
+  ConnectionStateProvider,
+  CreatePendingEvent,
+  useConnectionState,
+  useConnectionDispatch,
+  useDataView,
+};

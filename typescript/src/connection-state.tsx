@@ -71,6 +71,21 @@ export type ConnectionState = {
   saveBackoffSeconds: number;
 };
 
+export function CreatePendingEvent(
+  prefix: string,
+  event: any,
+): ConnectionAction {
+  const operationId =
+    prefix + Math.floor(Math.random() * 4294967296).toString(16);
+  return {
+    type: ConnectionActionTypes.ConnectionAddPendingEvent,
+    pendingEvent: {
+      clientId: operationId,
+      event,
+    },
+  };
+}
+
 // The reducer itself
 export function ConnectionStateReducer(
   state: ConnectionState,

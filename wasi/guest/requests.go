@@ -32,6 +32,17 @@ func RespondError(status int, err error) types.Response {
 	}
 }
 
+func CreateResponse(ret any, err error, message string) types.Response {
+	if err != nil {
+		return RespondError(http.StatusInternalServerError, fmt.Errorf("%s: %v", message, err))
+	}
+	responseJson, err := json.Marshal(ret)
+	if err != nil {
+		return RespondError(http.StatusInternalServerError, fmt.Errorf("Error marshaling JSON: %v", err))
+	}
+	return RespondSuccess(string(responseJson))
+}
+
 type RequestHandler func(params types.RequestParams) types.Response
 
 var REQUEST_HANDLERS map[int]RequestHandler

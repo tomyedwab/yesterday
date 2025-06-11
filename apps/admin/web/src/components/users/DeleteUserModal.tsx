@@ -110,13 +110,13 @@ export const DeleteUserModal = ({ isOpen, onClose, user, onSuccess }: DeleteUser
 
             <VStack gap={3} align="stretch" p={4} bg="gray.50" borderRadius="md">
               <HStack justify="space-between">
-                <Text fontWeight="medium">User ID:</Text>
-                <Text fontFamily="mono">{user?.id}</Text>
+                <Text fontWeight="medium" color="gray.700">User ID:</Text>
+                <Text fontFamily="mono" color="gray.900">{user?.id}</Text>
               </HStack>
               <HStack justify="space-between">
-                <Text fontWeight="medium">Username:</Text>
+                <Text fontWeight="medium" color="gray.700">Username:</Text>
                 <HStack>
-                  <Text>{user?.username}</Text>
+                  <Text color="gray.900">{user?.username}</Text>
                   {isAdminUser && (
                     <Badge colorScheme="blue" variant="subtle">
                       Admin

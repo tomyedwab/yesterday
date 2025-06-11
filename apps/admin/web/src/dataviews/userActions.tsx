@@ -20,6 +20,11 @@ export interface DeleteUserRequest {
   userID: number;
 }
 
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+}
+
 export const useUpdateUser = () => {
   const [isLoading, setIsLoading] = useState(false);
   const connectDispatch = useConnectionDispatch();
@@ -92,4 +97,30 @@ export const useDeleteUser = () => {
   };
 
   return { deleteUser, isLoading };
+};
+
+export const useCreateUser = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const connectDispatch = useConnectionDispatch();
+
+  const createUser = async (request: CreateUserRequest): Promise<UserActionResult> => {
+    setIsLoading(true);
+    try {
+      connectDispatch(
+        CreatePendingEvent("adduser:", {
+          type: "AddUser",
+          username: request.username,
+          password: request.password,
+        })
+      );
+      
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { createUser, isLoading };
 };

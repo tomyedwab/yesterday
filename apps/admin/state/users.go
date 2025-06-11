@@ -26,6 +26,7 @@ const UpdateUserEventType string = "UpdateUser"
 type UserAddedEvent struct {
 	events.GenericEvent
 	Username string `json:"username"`
+	Password string `json:"password,omitempty"`
 }
 
 type UpdateUserPasswordEvent struct {
@@ -97,8 +98,17 @@ func UsersHandleAddedEvent(tx *sqlx.Tx, event *UserAddedEvent) (bool, error) {
 	guest.WriteLog(fmt.Sprintf("Adding user: %s", event.Username))
 	// Create random salt
 	salt := uuid.New().String()
+	
+	var passwordHash string
+	if event.Password != "" {
+		// Hash the provided password
+		hasher := sha256.New()
+		hasher.Write([]byte(salt + event.Password))
+		passwordHash = hex.EncodeToString(hasher.Sum(nil))
+	}
+	
 	_, err := tx.Exec(`INSERT INTO users_v1 (username, salt, password_hash) VALUES ($1, $2, $3)`,
-		event.Username, salt, "")
+		event.Username, salt, passwordHash)
 	if err != nil {
 		// Consider UNIQUE constraint violation etc.
 		return false, fmt.Errorf("failed to insert user %s: %w", event.Username, err)

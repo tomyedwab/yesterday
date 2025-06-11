@@ -149,7 +149,20 @@ type DeleteUserAccessRuleEvent struct {
 - ✅ Clean application entry point with proper provider hierarchy
 - ✅ Maintains ConnectionStateProvider integration
 
-#### ✅ 2.2 User Management Components (COMPLETED) [L152-153]
+#### ✅ 2.2 User Management Components (COMPLETED) [L152-153] [L152-153]
+
+**✅ Create User Functionality (COMPLETED)**
+- Added `useCreateUser` hook in `userActions.tsx`
+- Created `CreateUserModal.tsx` component with form validation
+- Updated `UsersList.tsx` to include Create User button and modal
+- Implemented password validation with same requirements as Change Password:
+  - At least 8 characters
+  - Must contain uppercase letter
+  - Must contain lowercase letter  
+  - Must contain number
+- Added visual feedback for password validation
+- Updated backend `UserAddedEvent` to accept optional password field
+- Users can be created with username and password in single operation
 
 **✅ File: `src/components/users/UsersTab.tsx`**
 - ✅ Main container for user management with proper heading
@@ -592,7 +605,6 @@ The backend is now ready for frontend integration and provides a complete API fo
 - **Type Safety**: Full TypeScript integration with proper type definitions
 
 ### 📋 In Progress / Next Steps
-- **User Creation**: Add form for creating new users (Add User functionality)
 - **Applications Management**: Complete applications tab implementation
 - **Advanced Features**: Search, filtering, bulk operations
 - **Polish**: Enhanced validation, error handling, and user experience improvements
@@ -604,6 +616,7 @@ This implementation plan provides a comprehensive roadmap for building a full-fe
 The user management functionality has been fully implemented with the following features:
 
 ### Core User Operations
+- **✅ Create User**: Modal-based user creation with username and password validation
 - **✅ Edit User Details**: Modal-based editing with username validation and conflict handling
 - **✅ Change Password**: Secure password update with strength validation (8+ chars, uppercase, lowercase, number)
 - **✅ Delete User**: Confirmation dialog with admin user protection and cascade deletion warnings
@@ -618,12 +631,14 @@ The user management functionality has been fully implemented with the following 
 - **✅ Security**: Admin user protection and proper password validation
 
 ### Files Created/Modified
-- `src/dataviews/userActions.tsx` - Event publishing hooks
+- `src/dataviews/userActions.tsx` - Event publishing hooks (added useCreateUser)
+- `src/components/users/CreateUserModal.tsx` - User creation modal with validation
 - `src/components/users/EditUserModal.tsx` - User editing modal
 - `src/components/users/ChangePasswordModal.tsx` - Password change modal  
 - `src/components/users/DeleteUserModal.tsx` - Deletion confirmation modal
-- `src/components/users/UsersList.tsx` - Enhanced with modal integration
+- `src/components/users/UsersList.tsx` - Enhanced with Create User button and modal integration
 - `src/App.tsx` - Added toast notification system
+- Backend: `apps/admin/state/users.go` - Updated UserAddedEvent to support password field
 
 ### Ready for Production
 The user management interface is now fully functional and ready for production use. Users can safely manage user accounts through an intuitive interface that provides proper validation, confirmation dialogs, and feedback mechanisms.

@@ -1,10 +1,11 @@
 import { Box, Table, Text, Badge, Button, HStack, Spinner, Alert } from "@chakra-ui/react";
-import { LuPencilLine, LuTrash2, LuKey } from "react-icons/lu";
+import { LuPencilLine, LuTrash2, LuKey, LuPlus } from "react-icons/lu";
 import { useState } from "react";
 import { useUsersView, type User } from "../../dataviews/users";
 import { EditUserModal } from "./EditUserModal";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { DeleteUserModal } from "./DeleteUserModal";
+import { CreateUserModal } from "./CreateUserModal";
 import { toaster } from "../ui/toaster";
 
 export const UsersList = () => {
@@ -13,6 +14,7 @@ export const UsersList = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   const handleEditUser = (user: User) => {
     setSelectedUser(user);
@@ -29,10 +31,15 @@ export const UsersList = () => {
     setDeleteModalOpen(true);
   };
 
+  const handleCreateUser = () => {
+    setCreateModalOpen(true);
+  };
+
   const closeModals = () => {
     setEditModalOpen(false);
     setPasswordModalOpen(false);
     setDeleteModalOpen(false);
+    setCreateModalOpen(false);
     setSelectedUser(null);
   };
 
@@ -64,20 +71,47 @@ export const UsersList = () => {
 
   if (users.length === 0) {
     return (
-      <Alert.Root status="info">
-        <Alert.Indicator />
-        <Alert.Content>
-          <Alert.Title>No users found</Alert.Title>
-          <Alert.Description>
-            Create your first user to get started.
-          </Alert.Description>
-        </Alert.Content>
-      </Alert.Root>
+      <Box>
+        <HStack justify="space-between" mb={4}>
+          <Text fontSize="lg" fontWeight="medium">Users</Text>
+          <Button
+            colorScheme="blue"
+            onClick={handleCreateUser}
+          >
+            <LuPlus />
+            Create User
+          </Button>
+        </HStack>
+        <Alert.Root status="info">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>No users found</Alert.Title>
+            <Alert.Description>
+              Create your first user to get started.
+            </Alert.Description>
+          </Alert.Content>
+        </Alert.Root>
+        <CreateUserModal
+          isOpen={createModalOpen}
+          onClose={closeModals}
+          onSuccess={() => handleSuccess("created")}
+        />
+      </Box>
     );
   }
 
   return (
     <Box>
+      <HStack justify="space-between" mb={4}>
+        <Text fontSize="lg" fontWeight="medium">Users</Text>
+        <Button
+          colorScheme="blue"
+          onClick={handleCreateUser}
+        >
+          <LuPlus />
+          Create User
+        </Button>
+      </HStack>
       <Table.Root size="md" variant="outline">
         <Table.Header>
           <Table.Row>
@@ -161,6 +195,12 @@ export const UsersList = () => {
         onClose={closeModals}
         user={selectedUser}
         onSuccess={() => handleSuccess("deleted")}
+      />
+      
+      <CreateUserModal
+        isOpen={createModalOpen}
+        onClose={closeModals}
+        onSuccess={() => handleSuccess("created")}
       />
     </Box>
   );

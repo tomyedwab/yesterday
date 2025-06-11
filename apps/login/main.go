@@ -20,7 +20,7 @@ import (
 func handle_login(sessionManager *sessions.SessionManager, params types.RequestParams) types.Response {
 	var loginSession *sessions.Session
 	var err error
-	if refreshToken, ok := params.Cookies["YRT"]; ok {
+	if refreshToken, ok := params.Cookies["YRT"]; params.Body == "" && ok {
 		// If a refresh token is passed in, then the user is already logged in,
 		// so just look up their login session and generate a new session for
 		// the application

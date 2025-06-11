@@ -5,6 +5,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/database/events"
+	"github.com/tomyedwab/yesterday/wasi/guest"
 )
 
 // RuleType represents the type of access rule (ACCEPT or DENY)
@@ -30,12 +31,30 @@ const (
 
 // UserAccessRule represents a user access rule in the system.
 type UserAccessRule struct {
-	ID             int         `db:"id"`
-	ApplicationID  string      `db:"application_id"`
-	RuleType       RuleType    `db:"rule_type"`
-	SubjectType    SubjectType `db:"subject_type"`
-	SubjectID      string      `db:"subject_id"` // Either user ID or group name
-	CreatedAt      string      `db:"created_at"`
+	ID             int         `db:"id" json:"id"`
+	ApplicationID  string      `db:"application_id" json:"applicationId"`
+	RuleType       RuleType    `db:"rule_type" json:"ruleType"`
+	SubjectType    SubjectType `db:"subject_type" json:"subjectType"`
+	SubjectID      string      `db:"subject_id" json:"subjectId"` // Either user ID or group name
+	CreatedAt      string      `db:"created_at" json:"createdAt"`
+}
+
+// Event types for user access rules management
+const CreateUserAccessRuleEventType string = "CreateUserAccessRule"
+const DeleteUserAccessRuleEventType string = "DeleteUserAccessRule"
+
+// Event structures for user access rules management
+type CreateUserAccessRuleEvent struct {
+	events.GenericEvent
+	ApplicationID string      `json:"applicationId"`
+	RuleType      RuleType    `json:"ruleType"`
+	SubjectType   SubjectType `json:"subjectType"`
+	SubjectID     string      `json:"subjectId"`
+}
+
+type DeleteUserAccessRuleEvent struct {
+	events.GenericEvent
+	RuleID int `json:"ruleId"`
 }
 
 // -- Event handlers --
@@ -85,6 +104,41 @@ func UserAccessRulesHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (boo
 	return true, nil
 }
 
+func UserAccessRulesHandleCreateEvent(tx *sqlx.Tx, event *CreateUserAccessRuleEvent) (bool, error) {
+	guest.WriteLog(fmt.Sprintf("Creating user access rule for application: %s", event.ApplicationID))
+	
+	_, err := tx.Exec(`
+		INSERT INTO user_access_rules_v1 (application_id, rule_type, subject_type, subject_id)
+		VALUES ($1, $2, $3, $4)`,
+		event.ApplicationID, string(event.RuleType), string(event.SubjectType), event.SubjectID)
+	
+	if err != nil {
+		return false, fmt.Errorf("failed to create user access rule: %w", err)
+	}
+	
+	return true, nil
+}
+
+func UserAccessRulesHandleDeleteEvent(tx *sqlx.Tx, event *DeleteUserAccessRuleEvent) (bool, error) {
+	guest.WriteLog(fmt.Sprintf("Deleting user access rule ID: %d", event.RuleID))
+	
+	result, err := tx.Exec(`DELETE FROM user_access_rules_v1 WHERE id = $1`, event.RuleID)
+	if err != nil {
+		return false, fmt.Errorf("failed to delete user access rule %d: %w", event.RuleID, err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+	
+	if rowsAffected == 0 {
+		return false, fmt.Errorf("no access rule found with ID %d", event.RuleID)
+	}
+	
+	return true, nil
+}
+
 // -- DB Helpers --
 
 // GetUserAccessRulesForApplication retrieves all access rules for a specific application.
@@ -95,6 +149,16 @@ func GetUserAccessRulesForApplication(db *sqlx.DB, applicationID string) ([]User
 		FROM user_access_rules_v1 
 		WHERE application_id = $1
 		ORDER BY subject_type DESC, rule_type ASC`, applicationID)
+	return rules, err
+}
+
+// GetAllUserAccessRules retrieves all access rules, optionally filtered by application ID.
+func GetAllUserAccessRules(db *sqlx.DB) ([]UserAccessRule, error) {
+	var rules []UserAccessRule
+	err := db.Select(&rules, `
+		SELECT id, application_id, rule_type, subject_type, subject_id, created_at 
+		FROM user_access_rules_v1 
+		ORDER BY application_id, subject_type DESC, rule_type ASC`)
 	return rules, err
 }
 

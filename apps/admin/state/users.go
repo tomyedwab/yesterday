@@ -74,6 +74,12 @@ func UsersHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) 
 		return false, fmt.Errorf("failed to create users table: %w", err)
 	}
 
+	// Create indexes for better performance
+	_, err = tx.Exec(`CREATE INDEX idx_users_username ON users_v1(username)`)
+	if err != nil {
+		return false, fmt.Errorf("failed to create users username index: %w", err)
+	}
+
 	// Create admin user
 	_, err = tx.Exec(`
 		INSERT INTO users_v1 (username, salt, password_hash)
@@ -97,6 +103,92 @@ func UsersHandleAddedEvent(tx *sqlx.Tx, event *UserAddedEvent) (bool, error) {
 		// Consider UNIQUE constraint violation etc.
 		return false, fmt.Errorf("failed to insert user %s: %w", event.Username, err)
 	}
+	return true, nil
+}
+
+func UsersHandleUpdatePasswordEvent(tx *sqlx.Tx, event *UpdateUserPasswordEvent) (bool, error) {
+	guest.WriteLog(fmt.Sprintf("Updating password for user ID: %d", event.UserID))
+	
+	// Generate new salt and hash password
+	salt := uuid.New().String()
+	hasher := sha256.New()
+	hasher.Write([]byte(salt + event.NewPassword))
+	passwordHash := hex.EncodeToString(hasher.Sum(nil))
+	
+	result, err := tx.Exec(`UPDATE users_v1 SET salt = $1, password_hash = $2 WHERE id = $3`,
+		salt, passwordHash, event.UserID)
+	if err != nil {
+		return false, fmt.Errorf("failed to update password for user %d: %w", event.UserID, err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+	
+	if rowsAffected == 0 {
+		return false, fmt.Errorf("no user found with ID %d", event.UserID)
+	}
+	
+	return true, nil
+}
+
+func UsersHandleDeleteEvent(tx *sqlx.Tx, event *DeleteUserEvent) (bool, error) {
+	guest.WriteLog(fmt.Sprintf("Deleting user ID: %d", event.UserID))
+	
+	// Prevent deletion of admin user (ID = 1)
+	if event.UserID == 1 {
+		return false, fmt.Errorf("cannot delete admin user")
+	}
+	
+	// Delete user access rules first (cascade delete)
+	_, err := tx.Exec(`DELETE FROM user_access_rules_v1 WHERE subject_type = 'USER' AND subject_id = $1`,
+		fmt.Sprintf("%d", event.UserID))
+	if err != nil {
+		return false, fmt.Errorf("failed to delete user access rules for user %d: %w", event.UserID, err)
+	}
+	
+	// Delete the user
+	result, err := tx.Exec(`DELETE FROM users_v1 WHERE id = $1`, event.UserID)
+	if err != nil {
+		return false, fmt.Errorf("failed to delete user %d: %w", event.UserID, err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+	
+	if rowsAffected == 0 {
+		return false, fmt.Errorf("no user found with ID %d", event.UserID)
+	}
+	
+	return true, nil
+}
+
+func UsersHandleUpdateEvent(tx *sqlx.Tx, event *UpdateUserEvent) (bool, error) {
+	guest.WriteLog(fmt.Sprintf("Updating user ID: %d with username: %s", event.UserID, event.Username))
+	
+	// Prevent updating admin user ID (ID = 1) to different username
+	if event.UserID == 1 && event.Username != "admin" {
+		return false, fmt.Errorf("cannot change username of admin user")
+	}
+	
+	result, err := tx.Exec(`UPDATE users_v1 SET username = $1 WHERE id = $2`,
+		event.Username, event.UserID)
+	if err != nil {
+		return false, fmt.Errorf("failed to update user %d: %w", event.UserID, err)
+	}
+	
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+	
+	if rowsAffected == 0 {
+		return false, fmt.Errorf("no user found with ID %d", event.UserID)
+	}
+	
 	return true, nil
 }
 

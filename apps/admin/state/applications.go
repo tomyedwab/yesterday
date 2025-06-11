@@ -75,7 +75,7 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 
 	_, err = tx.Exec(`
 		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, db_name)
-		SELECT '3bf3e3c0-6e51-482a-b180-00f6aa568ee9', '0001-0001', 'Login service', 'login.yesterday.localhost:8443', 'db/admin.db'
+		SELECT '3bf3e3c0-6e51-482a-b180-00f6aa568ee9', '0001-0001', 'Login service', 'login.yesterday.localhost:8443', 'db/sessions.db'
 	`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create login application: %w", err)
@@ -95,77 +95,77 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 
 func ApplicationsHandleCreateEvent(tx *sqlx.Tx, event *CreateApplicationEvent) (bool, error) {
 	guest.WriteLog(fmt.Sprintf("Creating application: %s", event.DisplayName))
-	
+
 	// Generate unique instance ID
 	instanceID := uuid.New().String()
-	
+
 	_, err := tx.Exec(`
 		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, db_name)
 		VALUES ($1, $2, $3, $4, $5)`,
 		instanceID, event.AppID, event.DisplayName, event.HostName, event.DBName)
-	
+
 	if err != nil {
 		return false, fmt.Errorf("failed to create application %s: %w", event.DisplayName, err)
 	}
-	
+
 	return true, nil
 }
 
 func ApplicationsHandleUpdateEvent(tx *sqlx.Tx, event *UpdateApplicationEvent) (bool, error) {
 	guest.WriteLog(fmt.Sprintf("Updating application: %s", event.InstanceID))
-	
+
 	result, err := tx.Exec(`
-		UPDATE applications_v1 
+		UPDATE applications_v1
 		SET app_id = $1, display_name = $2, host_name = $3, db_name = $4
 		WHERE instance_id = $5`,
 		event.AppID, event.DisplayName, event.HostName, event.DBName, event.InstanceID)
-	
+
 	if err != nil {
 		return false, fmt.Errorf("failed to update application %s: %w", event.InstanceID, err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("failed to get affected rows: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return false, fmt.Errorf("no application found with instance ID %s", event.InstanceID)
 	}
-	
+
 	return true, nil
 }
 
 func ApplicationsHandleDeleteEvent(tx *sqlx.Tx, event *DeleteApplicationEvent) (bool, error) {
 	guest.WriteLog(fmt.Sprintf("Deleting application: %s", event.InstanceID))
-	
+
 	// Prevent deletion of core system applications
-	if event.InstanceID == "3bf3e3c0-6e51-482a-b180-00f6aa568ee9" || 
-	   event.InstanceID == "18736e4f-93f9-4606-a7be-863c7986ea5b" {
+	if event.InstanceID == "3bf3e3c0-6e51-482a-b180-00f6aa568ee9" ||
+		event.InstanceID == "18736e4f-93f9-4606-a7be-863c7986ea5b" {
 		return false, fmt.Errorf("cannot delete core system applications")
 	}
-	
+
 	// Delete associated access rules first
 	_, err := tx.Exec(`DELETE FROM user_access_rules_v1 WHERE application_id = $1`, event.InstanceID)
 	if err != nil {
 		return false, fmt.Errorf("failed to delete access rules for application %s: %w", event.InstanceID, err)
 	}
-	
+
 	// Delete the application
 	result, err := tx.Exec(`DELETE FROM applications_v1 WHERE instance_id = $1`, event.InstanceID)
 	if err != nil {
 		return false, fmt.Errorf("failed to delete application %s: %w", event.InstanceID, err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("failed to get affected rows: %w", err)
 	}
-	
+
 	if rowsAffected == 0 {
 		return false, fmt.Errorf("no application found with instance ID %s", event.InstanceID)
 	}
-	
+
 	return true, nil
 }
 

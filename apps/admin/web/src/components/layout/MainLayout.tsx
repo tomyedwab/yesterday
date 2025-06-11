@@ -1,6 +1,7 @@
 import { Box, Tabs } from "@chakra-ui/react";
 import { LuUsers, LuCog } from "react-icons/lu";
 import { UsersTab } from "../users/UsersTab";
+import { ApplicationsTab } from "../applications/ApplicationsTab";
 import { ConnectionStateHeader } from "./ConnectionStateHeader";
 
 export const MainLayout = () => {
@@ -23,9 +24,7 @@ export const MainLayout = () => {
             <UsersTab />
           </Tabs.Content>
           <Tabs.Content value="applications">
-            <Box p={4}>
-              <p>Applications management coming soon...</p>
-            </Box>
+            <ApplicationsTab />
           </Tabs.Content>
         </Tabs.Root>
       </Box>

@@ -36,14 +36,14 @@ func RegisterEventHandler[T events.Event](eventType string, handler database.Eve
 }
 
 //go:wasmexport handle_event
-func handle_event(eventHandle uint32, txHandle uint32, handlerId uint32) int32 {
+func handle_event(eventPtr, eventSize, txPtr, txSize, handlerId uint32) int32 {
 	handler := EVENT_HANDLERS[int(handlerId)]
 	if handler == nil {
 		report_event_error("Handler not found for ID: " + fmt.Sprintf("%d", handlerId))
 		return -1
 	}
 
-	db, err := sqlx.Connect("sqlproxy", string(GetBytes(txHandle)))
+	db, err := sqlx.Connect("sqlproxy", string(GetBytesFromPtr(txPtr, txSize)))
 	if err != nil {
 		report_event_error("Error connecting to database: " + err.Error())
 		return -1
@@ -56,7 +56,7 @@ func handle_event(eventHandle uint32, txHandle uint32, handlerId uint32) int32 {
 		return -1
 	}
 
-	updated, err := handler(tx, GetBytes(eventHandle))
+	updated, err := handler(tx, GetBytesFromPtr(eventPtr, eventSize))
 	if err != nil {
 		report_event_error("Error handling event: " + err.Error())
 		return -1

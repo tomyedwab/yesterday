@@ -1,11 +1,10 @@
 package guest
 
 //go:wasmimport env create_uuid
-func create_uuid() uint32
+func create_uuid(destPtr *uint32) uint32
 
 func CreateUUID() string {
-	handle := create_uuid()
-	ret := string(GetBytes(handle))
-	FreeBytes(handle)
-	return ret
+	var destPtr uint32
+	size := create_uuid(&destPtr)
+	return string(GetBytesFromPtr(destPtr, size))
 }

@@ -1,11 +1,10 @@
 package guest
 
 //go:wasmimport env get_env
-func get_env(string) uint32
+func get_env(key string, destPtr *uint32) uint32
 
 func GetEnv(key string) string {
-	handle := get_env(key)
-	byte := GetBytes(handle)
-	FreeBytes(handle)
-	return string(byte)
+	var destPtr uint32
+	size := get_env(key, &destPtr)
+	return string(GetBytesFromPtr(destPtr, size))
 }

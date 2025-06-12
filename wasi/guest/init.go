@@ -7,8 +7,8 @@ func init_module(version string)
 
 func Init(version string) {
 	init_module(version)
+	InitArena()
 	InitSQLProxy()
-	InitBytes()
 	InitRequests()
 	InitEvents()
 

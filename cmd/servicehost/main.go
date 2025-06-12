@@ -23,6 +23,7 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"github.com/tomyedwab/yesterday/database"
 	"github.com/tomyedwab/yesterday/sqlproxy/host"
+	wasihost "github.com/tomyedwab/yesterday/wasi/host"
 	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
@@ -37,7 +38,31 @@ const (
 	ContextKeyRequest ContextKey = iota
 	ContextKeyDB
 	ContextKeySqliteHost
+	ContextKeyAllocator
 )
+
+func writeSlice(ctx context.Context, m api.Module, destPtr uint32, data []byte) uint32 {
+	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
+	mem, err := alloc.Alloc(ctx, m, uint32(len(data)))
+	if err != nil {
+		fmt.Printf("Failed to allocate memory: %v\n", err)
+		return 0
+	}
+	m.Memory().Write(mem, data)
+	m.Memory().WriteUint32Le(destPtr, mem)
+	return uint32(len(data))
+}
+
+func writeSliceRet(ctx context.Context, m api.Module, data []byte) (uint32, uint32) {
+	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
+	mem, err := alloc.Alloc(ctx, m, uint32(len(data)))
+	if err != nil {
+		fmt.Printf("Failed to allocate memory: %v\n", err)
+		return 0, 0
+	}
+	m.Memory().Write(mem, data)
+	return mem, uint32(len(data))
+}
 
 func readBytes(m api.Module, offset, byteCount uint32) []byte {
 	buf, ok := m.Memory().Read(offset, byteCount)
@@ -45,24 +70,6 @@ func readBytes(m api.Module, offset, byteCount uint32) []byte {
 		log.Panicf("Memory.Read(%d, %d) out of range", offset, byteCount)
 	}
 	return buf
-}
-
-func writeBytes(m api.Module, data []byte) (freeFn func(), handle uint32) {
-	alloc := m.ExportedFunction("alloc_bytes")
-	free := m.ExportedFunction("free_bytes")
-	result, err := alloc.Call(context.Background(), uint64(len(data)))
-	if err != nil {
-		log.Panicln(err)
-	}
-	handle = uint32(result[0] >> 32)
-	ptr := uint32(result[0])
-	freeFn = func() {
-		free.Call(context.Background(), uint64(handle))
-	}
-	if !m.Memory().Write(ptr, data) {
-		log.Panicln("Memory.Write failed")
-	}
-	return
 }
 
 func initModule(ctx context.Context, m api.Module, versionOffset, versionByteCount uint32) {
@@ -73,11 +80,10 @@ func initModule(ctx context.Context, m api.Module, versionOffset, versionByteCou
 	db.SetVersion(string(readBytes(m, versionOffset, versionByteCount)))
 }
 
-func getEnv(ctx context.Context, m api.Module, keyOffset, keyByteCount uint32) uint32 {
+func getEnv(ctx context.Context, m api.Module, keyOffset, keyByteCount, destPtr uint32) uint32 {
 	key := string(readBytes(m, keyOffset, keyByteCount))
 	value := os.Getenv(key)
-	_, handle := writeBytes(m, []byte(value))
-	return handle
+	return writeSlice(ctx, m, destPtr, []byte(value))
 }
 
 func getTime(ctx context.Context, m api.Module) uint64 {
@@ -89,13 +95,13 @@ func writeLog(ctx context.Context, m api.Module, logOffset, logByteCount uint32)
 	fmt.Println(string(readBytes(m, logOffset, logByteCount)))
 }
 
-func createUUID(ctx context.Context, m api.Module) uint32 {
+func createUUID(ctx context.Context, m api.Module, destPtr uint32) uint32 {
 	newID := uuid.New().String()
-	_, handle := writeBytes(m, []byte(newID))
-	return handle
+	return writeSlice(ctx, m, destPtr, []byte(newID))
 }
 
 func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount uint32, handlerId uint32) {
+	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
 	uri := string(readBytes(m, uriOffset, uriByteCount))
 
 	fmt.Printf("Registering handler %d for %s\n", handlerId, uri)
@@ -124,8 +130,13 @@ func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount 
 			Cookies:  cookieMap,
 		}
 		jsonBytes, _ := json.Marshal(params)
-		freeFn, handle := writeBytes(m, jsonBytes)
-		defer freeFn()
+		mem, size := writeSliceRet(ctx, m, jsonBytes)
+		if size == 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Printf("Failed to allocate memory")
+			return
+		}
+		defer alloc.Free(mem)
 
 		handlerFn := m.ExportedFunction("handle_request")
 		if handlerFn == nil {
@@ -133,7 +144,7 @@ func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount 
 			fmt.Printf("Request handler not found")
 			return
 		}
-		_, err = handlerFn.Call(requestCtx, uint64(handle), uint64(handlerId))
+		_, err = handlerFn.Call(requestCtx, uint64(mem), uint64(size), uint64(handlerId))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Printf("Request returned an error: %v\n", err)
@@ -148,6 +159,7 @@ func reportEventError(ctx context.Context, m api.Module, errorOffset, errorByteC
 }
 
 func registerEventHandler(ctx context.Context, m api.Module, eventTypeOffset, eventTypeByteCount uint32, handlerId uint32) {
+	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
 	eventType := string(readBytes(m, eventTypeOffset, eventTypeByteCount))
 	fmt.Printf("Registering event handler %d for %s\n", handlerId, eventType)
 
@@ -161,17 +173,23 @@ func registerEventHandler(ctx context.Context, m api.Module, eventTypeOffset, ev
 		log.Panicln("Missing sqlite host in context")
 	}
 	database.AddGenericEventHandler(db, eventType, func(tx *sqlx.Tx, eventJson []byte) (bool, error) {
-		freeFn1, eventHandle := writeBytes(m, eventJson)
-		defer freeFn1()
+		eventMem, eventSize := writeSliceRet(ctx, m, eventJson)
+		if eventSize == 0 {
+			return false, fmt.Errorf("error allocating memory")
+		}
+		defer alloc.Free(eventMem)
 
-		freeFn2, txHandle := writeBytes(m, []byte(host.RegisterTx(tx.Tx)))
-		defer freeFn2()
+		txMem, txSize := writeSliceRet(ctx, m, []byte(host.RegisterTx(tx.Tx)))
+		if txSize == 0 {
+			return false, fmt.Errorf("error allocating memory")
+		}
+		defer alloc.Free(txMem)
 
 		handlerFn := m.ExportedFunction("handle_event")
 		if handlerFn == nil {
 			return false, fmt.Errorf("event handler not found")
 		}
-		value, err := handlerFn.Call(ctx, uint64(eventHandle), uint64(txHandle), uint64(handlerId))
+		value, err := handlerFn.Call(ctx, uint64(eventMem), uint64(eventSize), uint64(txMem), uint64(txSize), uint64(handlerId))
 		if err != nil {
 			return false, fmt.Errorf("event handler returned an error: %v", err)
 		}
@@ -206,11 +224,11 @@ func writeResponse(requestCtx context.Context, m api.Module, respOffset, respByt
 	w.Write([]byte(response.Body))
 }
 
-func sqliteHostHandler(requestCtx context.Context, m api.Module, reqOffset, reqByteCount uint32) uint64 {
+func sqliteHostHandler(ctx context.Context, m api.Module, reqOffset, reqByteCount, destPtr uint32) uint32 {
 	request := readBytes(m, reqOffset, reqByteCount)
 	fmt.Printf("REQ: %s\n", string(request))
 
-	sqliteHost := requestCtx.Value(ContextKeySqliteHost)
+	sqliteHost := ctx.Value(ContextKeySqliteHost)
 	if sqliteHost == nil {
 		log.Panicln("Missing sqlite host in context")
 	}
@@ -218,14 +236,12 @@ func sqliteHostHandler(requestCtx context.Context, m api.Module, reqOffset, reqB
 	response, err := sqliteHost.(*host.SQLHost).HandleRequest([]byte(request))
 	if err != nil {
 		log.Printf("Error handling sqlite request: %v\n", err)
-		_, handle := writeBytes(m, []byte(err.Error()))
-		return uint64(handle) | (1 << 32)
+		return writeSlice(ctx, m, destPtr, []byte(err.Error()))
 	}
-	_, handle := writeBytes(m, response)
-	return uint64(handle)
+	return writeSlice(ctx, m, destPtr, response)
 }
 
-func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, reqByteCount uint32) uint32 {
+func crossServiceRequest(ctx context.Context, m api.Module, reqOffset, reqByteCount, destPtr uint32) uint32 {
 	var response types.CrossServiceResponse
 	request := readBytes(m, reqOffset, reqByteCount)
 	var crossServiceRequest types.CrossServiceRequest
@@ -234,8 +250,7 @@ func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, re
 		response.Status = http.StatusInternalServerError
 		response.Body = "Error unmarshaling cross service request: " + err.Error()
 		responseJson, _ := json.Marshal(response)
-		_, handle := writeBytes(m, responseJson)
-		return uint32(handle)
+		return writeSlice(ctx, m, destPtr, responseJson)
 	}
 
 	csReq := http.Request{
@@ -259,8 +274,7 @@ func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, re
 		response.Status = http.StatusInternalServerError
 		response.Body = "Error making cross service request: " + err.Error()
 		responseJson, _ := json.Marshal(response)
-		_, handle := writeBytes(m, responseJson)
-		return uint32(handle)
+		return writeSlice(ctx, m, destPtr, responseJson)
 	}
 	defer resp.Body.Close()
 
@@ -270,13 +284,11 @@ func crossServiceRequest(requestCtx context.Context, m api.Module, reqOffset, re
 		response.Status = http.StatusInternalServerError
 		response.Body = err.Error()
 		responseJson, _ := json.Marshal(response)
-		_, handle := writeBytes(m, responseJson)
-		return uint32(handle)
+		return writeSlice(ctx, m, destPtr, responseJson)
 	}
 	response.Body = string(bodyBytes)
 	responseJson, _ := json.Marshal(response)
-	_, handle := writeBytes(m, responseJson)
-	return uint32(handle)
+	return writeSlice(ctx, m, destPtr, responseJson)
 }
 
 func main() {
@@ -307,10 +319,13 @@ func main() {
 	}
 	sqliteHost := host.NewSQLHost(db.GetDB().DB)
 
+	allocator := wasihost.NewAllocator()
+
 	// Initialize WASI runtime
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, ContextKeyDB, db)
 	ctx = context.WithValue(ctx, ContextKeySqliteHost, sqliteHost)
+	ctx = context.WithValue(ctx, ContextKeyAllocator, allocator)
 
 	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)

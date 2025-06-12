@@ -60,10 +60,10 @@ func register_handler(uri string, handlerId uint32)
 func write_response(message string)
 
 //go:wasmimport env cross_service_request
-func cross_service_request(request string) uint32
+func cross_service_request(request string, destPtr *uint32) uint32
 
 //go:wasmexport handle_request
-func handle_request(byteHandle uint32, handlerId uint32) int32 {
+func handle_request(paramsPtr, paramsSize, handlerId uint32) int32 {
 	handler := REQUEST_HANDLERS[int(handlerId)]
 	if handler == nil {
 		write_response("Internal error: missing handler")
@@ -71,7 +71,7 @@ func handle_request(byteHandle uint32, handlerId uint32) int32 {
 	}
 
 	var params types.RequestParams
-	err := json.Unmarshal(GetBytes(byteHandle), &params)
+	err := json.Unmarshal(GetBytesFromPtr(paramsPtr, paramsSize), &params)
 	if err != nil {
 		resp := RespondError(http.StatusInternalServerError, err)
 		respJson, _ := json.Marshal(resp)
@@ -101,10 +101,11 @@ func CrossServiceRequest(path, applicationId string, body []byte, response inter
 	if err != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to marshal cross service request: %v", err)
 	}
-	resp := cross_service_request(string(csRequestJson))
+	var destPtr uint32
+	destSize := cross_service_request(string(csRequestJson), &destPtr)
 
 	var crossServiceResponse types.CrossServiceResponse
-	responseJson := GetBytes(resp)
+	responseJson := GetBytesFromPtr(destPtr, destSize)
 	unmarshalErr := json.Unmarshal(responseJson, &crossServiceResponse)
 	if unmarshalErr != nil {
 		return http.StatusInternalServerError, fmt.Errorf("failed to unmarshal cross service response: %v", unmarshalErr)

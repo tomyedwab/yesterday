@@ -2,22 +2,27 @@ package guest
 
 import (
 	"fmt"
+	"unsafe"
 
 	sqlproxy "github.com/tomyedwab/yesterday/sqlproxy/driver"
 )
 
 //go:wasmimport env sqlite_host_handler
-func sqlite_host_handler(requestPayload string) (responseHandle uint64)
+func sqlite_host_handler(requestPayload string, destPtr uint32) int32
+
+func GetPtrAddress(destPtr *uint32) uint32 {
+	return uint32(uintptr(unsafe.Pointer(destPtr)))
+}
 
 func InitSQLProxy() {
 	sqlproxy.SetHostHandler(func(payload []byte) ([]byte, error) {
-		responseHandle := sqlite_host_handler(string(payload))
-		ret := GetBytes(uint32(responseHandle))
-		FreeBytes(uint32(responseHandle))
-		if responseHandle>>32 != 0 {
+		var destPtr uint32
+		destSize := sqlite_host_handler(string(payload), GetPtrAddress(&destPtr))
+		if destSize < 0 {
+			ret := GetBytesFromPtr(destPtr, uint32(-destSize))
 			return nil, fmt.Errorf("sqlite_host_handler returned error: %s", string(ret))
 		}
-		return ret, nil
+		return GetBytesFromPtr(destPtr, uint32(destSize)), nil
 	})
 
 }

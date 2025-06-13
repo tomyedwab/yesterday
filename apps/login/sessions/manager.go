@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/apps/login/types"
 	"github.com/tomyedwab/yesterday/wasi/guest"
 )
@@ -18,14 +17,14 @@ var (
 
 // SessionManager handles the lifecycle of user sessions and refresh tokens.
 type SessionManager struct {
-	db            *sqlx.DB
+	db            *guest.DB
 	accessExpiry  time.Duration // How long access tokens are valid
 	sessionExpiry time.Duration // How long sessions are valid
 }
 
 // NewManager creates and initializes a new SessionManager.
 // It requires a SessionStore implementation and token durations.
-func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*SessionManager, error) {
+func NewManager(db *guest.DB, accessTokenExpiry, sessionExpiry time.Duration) (*SessionManager, error) {
 	guest.WriteLog("Initializing session manager")
 	err := DBInit(db)
 	if err != nil {

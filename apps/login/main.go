@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jmoiron/sqlx"
-
 	admin_types "github.com/tomyedwab/yesterday/apps/admin/types"
 	"github.com/tomyedwab/yesterday/apps/login/sessions"
 	login_types "github.com/tomyedwab/yesterday/apps/login/types"
@@ -108,10 +106,7 @@ func handle_access_token(sessionManager *sessions.SessionManager, params types.R
 //go:wasmexport init
 func init() {
 	guest.Init("0.0.1")
-	db, err := sqlx.Connect("sqlproxy", "")
-	if err != nil {
-		log.Fatal(err)
-	}
+	db := guest.NewDB()
 	sessionManager, err := sessions.NewManager(db, 10*time.Minute, 1*time.Hour)
 	if err != nil {
 		log.Fatal(err)

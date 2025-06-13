@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/apps/admin/state"
 	admin_types "github.com/tomyedwab/yesterday/apps/admin/types"
 	"github.com/tomyedwab/yesterday/wasi/guest"
@@ -15,14 +14,10 @@ import (
 )
 
 func HandleDoLogin(params types.RequestParams) types.Response {
-	db, err := sqlx.Connect("sqlproxy", "")
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("sqlx.Connect failed: %v", err))
-	}
-	defer db.Close()
+	db := guest.NewDB()
 
 	var request admin_types.AdminLoginRequest
-	err = json.Unmarshal([]byte(params.Body), &request)
+	err := json.Unmarshal([]byte(params.Body), &request)
 	if err != nil {
 		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
 	}
@@ -62,14 +57,10 @@ func HandleDoLogin(params types.RequestParams) types.Response {
 }
 
 func HandleCheckAccess(params types.RequestParams) types.Response {
-	db, err := sqlx.Connect("sqlproxy", "")
-	if err != nil {
-		return guest.RespondError(http.StatusInternalServerError, fmt.Errorf("sqlx.Connect failed: %v", err))
-	}
-	defer db.Close()
+	db := guest.NewDB()
 
 	var request admin_types.AccessRequest
-	err = json.Unmarshal([]byte(params.Body), &request)
+	err := json.Unmarshal([]byte(params.Body), &request)
 	if err != nil {
 		return guest.RespondError(http.StatusBadRequest, fmt.Errorf("error parsing request: %v", err))
 	}

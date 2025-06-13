@@ -4,11 +4,11 @@ package types
 
 // SQLRequest defines the structure for requests sent to the host.
 type SQLRequest struct {
-	Command string        `json:"command"`
-	SQL     string        `json:"sql,omitempty"`
-	Args    []interface{} `json:"args,omitempty"` // Processed driver.Value
-	StmtID  string        `json:"stmt_id,omitempty"`
-	TxID    string        `json:"tx_id,omitempty"`
+	Command string `json:"command"`
+	SQL     string `json:"sql,omitempty"`
+	Args    []any  `json:"args,omitempty"` // Processed driver.Value
+	StmtID  string `json:"stmt_id,omitempty"`
+	TxID    string `json:"tx_id,omitempty"`
 }
 
 // GeneralResponse is used for commands that don't return rows or specific exec results (e.g., prepare, commit, rollback, close).
@@ -20,9 +20,9 @@ type GeneralResponse struct {
 
 // QueryResponse defines the structure for responses from 'query' commands.
 type QueryResponse struct {
-	Columns []string        `json:"columns"`
-	Rows    [][]interface{} `json:"rows"` // Host should ensure types are JSON-compatible (e.g., time.Time as string, []byte as base64)
-	Error   string          `json:"error,omitempty"`
+	Columns []string `json:"columns"`
+	Rows    [][]any  `json:"rows"` // Host should ensure types are JSON-compatible (e.g., time.Time as string, []byte as base64)
+	Error   string   `json:"error,omitempty"`
 }
 
 // ExecResponse defines the structure for responses from 'exec' commands.

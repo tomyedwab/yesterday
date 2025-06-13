@@ -22,8 +22,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 	"github.com/tomyedwab/yesterday/database"
-	"github.com/tomyedwab/yesterday/sqlproxy/host"
-	wasihost "github.com/tomyedwab/yesterday/wasi/host"
+	"github.com/tomyedwab/yesterday/wasi/host"
 	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
@@ -42,7 +41,7 @@ const (
 )
 
 func writeSlice(ctx context.Context, m api.Module, destPtr uint32, data []byte) uint32 {
-	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
+	alloc := ctx.Value(ContextKeyAllocator).(*host.Allocator)
 	mem, err := alloc.Alloc(ctx, m, uint32(len(data)))
 	if err != nil {
 		fmt.Printf("Failed to allocate memory: %v\n", err)
@@ -54,7 +53,7 @@ func writeSlice(ctx context.Context, m api.Module, destPtr uint32, data []byte) 
 }
 
 func writeSliceRet(ctx context.Context, m api.Module, data []byte) (uint32, uint32) {
-	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
+	alloc := ctx.Value(ContextKeyAllocator).(*host.Allocator)
 	mem, err := alloc.Alloc(ctx, m, uint32(len(data)))
 	if err != nil {
 		fmt.Printf("Failed to allocate memory: %v\n", err)
@@ -101,7 +100,7 @@ func createUUID(ctx context.Context, m api.Module, destPtr uint32) uint32 {
 }
 
 func registerHandler(ctx context.Context, m api.Module, uriOffset, uriByteCount uint32, handlerId uint32) {
-	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
+	alloc := ctx.Value(ContextKeyAllocator).(*host.Allocator)
 	uri := string(readBytes(m, uriOffset, uriByteCount))
 
 	fmt.Printf("Registering handler %d for %s\n", handlerId, uri)
@@ -159,7 +158,7 @@ func reportEventError(ctx context.Context, m api.Module, errorOffset, errorByteC
 }
 
 func registerEventHandler(ctx context.Context, m api.Module, eventTypeOffset, eventTypeByteCount uint32, handlerId uint32) {
-	alloc := ctx.Value(ContextKeyAllocator).(*wasihost.Allocator)
+	alloc := ctx.Value(ContextKeyAllocator).(*host.Allocator)
 	eventType := string(readBytes(m, eventTypeOffset, eventTypeByteCount))
 	fmt.Printf("Registering event handler %d for %s\n", handlerId, eventType)
 
@@ -319,7 +318,7 @@ func main() {
 	}
 	sqliteHost := host.NewSQLHost(db.GetDB().DB)
 
-	allocator := wasihost.NewAllocator()
+	allocator := host.NewAllocator()
 
 	// Initialize WASI runtime
 	ctx := context.Background()

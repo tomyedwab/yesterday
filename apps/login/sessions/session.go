@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/wasi/guest"
 )
 
@@ -89,7 +88,7 @@ func generateRandomID(length int) (string, error) {
 
 // --- Database Methods ---
 
-func DBInit(db *sqlx.DB) error {
+func DBInit(db *guest.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
@@ -103,25 +102,25 @@ func DBInit(db *sqlx.DB) error {
 	return err
 }
 
-func DBGetSessionByID(db *sqlx.DB, id string) (*Session, error) {
+func DBGetSessionByID(db *guest.DB, id string) (*Session, error) {
 	var s Session
 	err := db.Get(&s, "SELECT * FROM sessions WHERE id = $1", id)
 	return &s, err
 }
 
-func DBGetSessionByRefreshToken(db *sqlx.DB, refreshToken string) (*Session, error) {
+func DBGetSessionByRefreshToken(db *guest.DB, refreshToken string) (*Session, error) {
 	var s Session
 	err := db.Get(&s, "SELECT * FROM sessions WHERE refresh_token = $1", refreshToken)
 	return &s, err
 }
 
-func (s *Session) DBCreate(db *sqlx.DB) error {
+func (s *Session) DBCreate(db *guest.DB) error {
 	guest.WriteLog(fmt.Sprintf("Creating session %s", s.ID))
 	_, err := db.Exec("INSERT INTO sessions (id, user_id, session_type, refresh_token, created_at, last_refreshed) VALUES ($1, $2, $3, $4, $5, $6)", s.ID, s.UserID, s.SessionType, s.RefreshToken, s.CreatedAt, s.LastRefreshed)
 	return err
 }
 
-func (s *Session) DBUpdateRefreshToken(db *sqlx.DB) (string, error) {
+func (s *Session) DBUpdateRefreshToken(db *guest.DB) (string, error) {
 	guest.WriteLog(fmt.Sprintf("Updating refresh token for session %s", s.ID))
 	refreshToken, err := generateRandomID(32)
 	if err != nil {
@@ -133,13 +132,13 @@ func (s *Session) DBUpdateRefreshToken(db *sqlx.DB) (string, error) {
 	return refreshToken, err
 }
 
-func (s *Session) DBDelete(db *sqlx.DB) error {
+func (s *Session) DBDelete(db *guest.DB) error {
 	guest.WriteLog(fmt.Sprintf("Deleting session %s", s.ID))
 	_, err := db.Exec("DELETE FROM sessions WHERE id = $1", s.ID)
 	return err
 }
 
-func DBDeleteExpiredSessions(db *sqlx.DB, sessionExpiry time.Duration) error {
+func DBDeleteExpiredSessions(db *guest.DB, sessionExpiry time.Duration) error {
 	// Get session IDs that have expired
 	var sessionIDs []string
 	err := db.Select(&sessionIDs, "SELECT id FROM sessions WHERE last_refreshed < $1", FlexibleInt64(guest.GetTime().UTC().Add(-sessionExpiry).Unix()))
@@ -157,7 +156,7 @@ func DBDeleteExpiredSessions(db *sqlx.DB, sessionExpiry time.Duration) error {
 	return nil
 }
 
-func DBDeleteSessionsForUser(db *sqlx.DB, userID int) error {
+func DBDeleteSessionsForUser(db *guest.DB, userID int) error {
 	guest.WriteLog(fmt.Sprintf("Deleting sessions for user %d", userID))
 	_, err := db.Exec("DELETE FROM sessions WHERE user_id = $1", userID)
 	return err

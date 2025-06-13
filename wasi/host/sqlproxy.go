@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
-	"github.com/tomyedwab/yesterday/sqlproxy/types"
+	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
 // SQLHost handles proxy requests for an SQLite database.
@@ -40,7 +40,7 @@ func (h *SQLHost) HandleRequest(requestPayload []byte) ([]byte, error) {
 		return marshalErrorResponse(fmt.Sprintf("failed to unmarshal request: %v", err))
 	}
 
-	var responseData interface{}
+	var responseData any
 	var opErr error
 
 	switch req.Command {
@@ -58,8 +58,6 @@ func (h *SQLHost) HandleRequest(requestPayload []byte) ([]byte, error) {
 		responseData, opErr = h.handleRollback(&req)
 	case "close_stmt":
 		responseData, opErr = h.handleCloseStmt(&req)
-	case "close_conn":
-		responseData, opErr = h.handleCloseConn(&req)
 	default:
 		opErr = fmt.Errorf("unknown command: %s", req.Command)
 	}
@@ -329,26 +327,5 @@ func (h *SQLHost) handleCloseStmt(req *types.SQLRequest) (types.GeneralResponse,
 	if err := stmt.Close(); err != nil {
 		return types.GeneralResponse{}, fmt.Errorf("close statement failed: %w", err)
 	}
-	return types.GeneralResponse{}, nil
-}
-
-func (h *SQLHost) handleCloseConn(req *types.SQLRequest) (types.GeneralResponse, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// Close all open statements associated with this host instance
-	for id, stmt := range h.stmts {
-		_ = stmt.Close() // Ignore error, best effort
-		delete(h.stmts, id)
-	}
-
-	// Rollback any pending transactions associated with this host instance
-	for id, tx := range h.txs {
-		_ = tx.Rollback() // Ignore error, best effort
-		delete(h.txs, id)
-	}
-
-	// The underlying h.db is managed externally, so we don't close it here.
-	// This command effectively resets the host's internal state.
 	return types.GeneralResponse{}, nil
 }

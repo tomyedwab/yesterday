@@ -1,36 +1,53 @@
-import { Box, Table, Text, Badge, HStack, Spinner, Alert, Button, IconButton } from "@chakra-ui/react";
+import {
+  Box,
+  Table,
+  Text,
+  Badge,
+  HStack,
+  Spinner,
+  Alert,
+  Button,
+  IconButton,
+} from "@chakra-ui/react";
 import { toaster } from "../ui/toaster";
-import { LuServer, LuPlus, LuPencil, LuTrash2 } from "react-icons/lu";
+import { LuServer, LuPlus, LuPencil, LuTrash2, LuShield } from "react-icons/lu";
 import { useState } from "react";
-import { useApplicationsView, type Application } from "../../dataviews/applications";
+import {
+  useApplicationsView,
+  type Application,
+} from "../../dataviews/applications";
 import { CreateApplicationModal } from "./CreateApplicationModal";
 import { EditApplicationModal } from "./EditApplicationModal";
 import { DeleteApplicationModal } from "./DeleteApplicationModal";
+import { UserAccessRulesList } from "../access-rules/UserAccessRulesList";
 
 export const ApplicationsList = () => {
   const [loading, applications] = useApplicationsView();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
+  const [accessRulesView, setAccessRulesView] = useState(false);
+  const [selectedApplication, setSelectedApplication] =
+    useState<Application | null>(null);
 
   const closeModals = () => {
     setCreateModalOpen(false);
     setEditModalOpen(false);
     setDeleteModalOpen(false);
+    setAccessRulesView(false);
     setSelectedApplication(null);
   };
 
   const handleSuccess = (action: string) => {
     closeModals();
-    
+
     // Show success toast
     toaster.create({
       title: "Success",
       description: `Application ${action} successfully`,
       duration: 3000,
     });
-    
+
     // The Yesterday framework handles data refresh automatically via events
   };
 
@@ -56,6 +73,16 @@ export const ApplicationsList = () => {
     handleSuccess("deleted");
   };
 
+  const handleAccessRulesClick = (application: Application) => {
+    setSelectedApplication(application);
+    setAccessRulesView(true);
+  };
+
+  const handleBackToApplications = () => {
+    setAccessRulesView(false);
+    setSelectedApplication(null);
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" p={8}>
@@ -67,11 +94,39 @@ export const ApplicationsList = () => {
     );
   }
 
+  // Show access rules view if selected
+  if (accessRulesView && selectedApplication) {
+    return (
+      <Box>
+        <HStack justify="space-between" mb={4}>
+          <HStack gap={2}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleBackToApplications}
+            >
+              ← Back to Applications
+            </Button>
+            <Text fontSize="lg" fontWeight="medium">
+              {selectedApplication.displayName} - Access Rules
+            </Text>
+          </HStack>
+        </HStack>
+        <UserAccessRulesList
+          applicationId={selectedApplication.instanceId}
+          applicationName={selectedApplication.displayName}
+        />
+      </Box>
+    );
+  }
+
   if (applications.length === 0) {
     return (
       <Box>
         <HStack justify="space-between" mb={4}>
-          <Text fontSize="lg" fontWeight="medium">Applications</Text>
+          <Text fontSize="lg" fontWeight="medium">
+            Applications
+          </Text>
           <Button
             colorScheme="blue"
             size="sm"
@@ -119,12 +174,15 @@ export const ApplicationsList = () => {
   return (
     <Box>
       <HStack justify="space-between" mb={4}>
-        <Text fontSize="lg" fontWeight="medium">Applications</Text>
+        <Text fontSize="lg" fontWeight="medium">
+          Applications
+        </Text>
         <HStack gap={4}>
           <HStack gap={2}>
             <LuServer />
             <Text fontSize="sm" color="gray.600">
-              {applications.length} application{applications.length !== 1 ? 's' : ''}
+              {applications.length} application
+              {applications.length !== 1 ? "s" : ""}
             </Text>
           </HStack>
           <Button
@@ -146,7 +204,7 @@ export const ApplicationsList = () => {
             <Table.ColumnHeader>Database</Table.ColumnHeader>
             <Table.ColumnHeader>Type</Table.ColumnHeader>
             <Table.ColumnHeader>Instance ID</Table.ColumnHeader>
-            <Table.ColumnHeader width="120px">Actions</Table.ColumnHeader>
+            <Table.ColumnHeader width="160px">Actions</Table.ColumnHeader>
           </Table.Row>
         </Table.Header>
         <Table.Body>
@@ -156,13 +214,17 @@ export const ApplicationsList = () => {
                 <Text fontWeight="medium">{app.displayName}</Text>
               </Table.Cell>
               <Table.Cell>
-                <Text fontFamily="mono" fontSize="sm">{app.appId}</Text>
+                <Text fontFamily="mono" fontSize="sm">
+                  {app.appId}
+                </Text>
               </Table.Cell>
               <Table.Cell>
                 <Text fontSize="sm">{app.hostName}</Text>
               </Table.Cell>
               <Table.Cell>
-                <Text fontFamily="mono" fontSize="sm">{app.dbName}</Text>
+                <Text fontFamily="mono" fontSize="sm">
+                  {app.dbName}
+                </Text>
               </Table.Cell>
               <Table.Cell>
                 {getApplicationTypeBadge(app.appId, app.displayName)}
@@ -174,6 +236,14 @@ export const ApplicationsList = () => {
               </Table.Cell>
               <Table.Cell>
                 <HStack gap={1}>
+                  <IconButton
+                    size="sm"
+                    variant="ghost"
+                    aria-label="Manage access rules"
+                    onClick={() => handleAccessRulesClick(app)}
+                  >
+                    <LuShield />
+                  </IconButton>
                   <IconButton
                     size="sm"
                     variant="ghost"

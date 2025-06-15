@@ -1,60 +1,48 @@
 package main
 
 import (
-	"github.com/tomyedwab/yesterday/apps/admin/login"
+	"log"
+	"net/http"
+
+	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/applib"
+	"github.com/tomyedwab/yesterday/applib/database"
+	"github.com/tomyedwab/yesterday/applib/database/events"
+	"github.com/tomyedwab/yesterday/applib/httputils"
+	"github.com/tomyedwab/yesterday/apps/admin/handlers"
 	"github.com/tomyedwab/yesterday/apps/admin/state"
-	"github.com/tomyedwab/yesterday/database/events"
-	"github.com/tomyedwab/yesterday/wasi/guest"
-	"github.com/tomyedwab/yesterday/wasi/types"
 )
 
-//go:wasmexport init
-func init() {
-	guest.Init("0.0.1")
-
-	db := guest.NewDB()
+func main() {
+	application, err := applib.Init("0.0.1")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Internal login functionality, used by the login service
-	guest.RegisterHandler("/internal/dologin", login.HandleDoLogin)
-	guest.RegisterHandler("/internal/checkAccess", login.HandleCheckAccess)
-
-	// Register event handlers
-	guest.RegisterEventHandler(events.DBInitEventType, state.ApplicationsHandleInitEvent)
-	guest.RegisterEventHandler(events.DBInitEventType, state.UsersHandleInitEvent)
-	guest.RegisterEventHandler(state.UserAddedEventType, state.UsersHandleAddedEvent)
-	guest.RegisterEventHandler(events.DBInitEventType, state.UserAccessRulesHandleInitEvent)
-
-	// User management event handlers
-	guest.RegisterEventHandler(state.UpdateUserPasswordEventType, state.UsersHandleUpdatePasswordEvent)
-	guest.RegisterEventHandler(state.DeleteUserEventType, state.UsersHandleDeleteEvent)
-	guest.RegisterEventHandler(state.UpdateUserEventType, state.UsersHandleUpdateEvent)
-
-	// Application management event handlers
-	guest.RegisterEventHandler(state.CreateApplicationEventType, state.ApplicationsHandleCreateEvent)
-	guest.RegisterEventHandler(state.UpdateApplicationEventType, state.ApplicationsHandleUpdateEvent)
-	guest.RegisterEventHandler(state.DeleteApplicationEventType, state.ApplicationsHandleDeleteEvent)
-
-	// User access rules management event handlers
-	guest.RegisterEventHandler(state.CreateUserAccessRuleEventType, state.UserAccessRulesHandleCreateEvent)
-	guest.RegisterEventHandler(state.DeleteUserAccessRuleEventType, state.UserAccessRulesHandleDeleteEvent)
+	http.HandleFunc("/internal/dologin", handlers.HandleDoLogin)
+	http.HandleFunc("/internal/checkAccess", handlers.HandleCheckAccess)
 
 	// Register data views
-	guest.RegisterHandler("/api/users", func(params types.RequestParams) types.Response {
+	http.HandleFunc("/api/users", func(w http.ResponseWriter, r *http.Request) {
+		db := r.Context().Value(applib.ContextSqliteDatabaseKey).(*sqlx.DB)
 		ret, err := state.GetUsers(db)
-		return guest.CreateResponse(map[string]any{
+		httputils.HandleAPIResponse(w, r, map[string]any{
 			"users": ret,
-		}, err, "Error fetching users")
+		}, err, http.StatusInternalServerError)
 	})
 
-	guest.RegisterHandler("/api/applications", func(params types.RequestParams) types.Response {
+	http.HandleFunc("/api/applications", func(w http.ResponseWriter, r *http.Request) {
+		db := r.Context().Value(applib.ContextSqliteDatabaseKey).(*sqlx.DB)
 		ret, err := state.GetApplications(db)
-		return guest.CreateResponse(map[string]any{
+		httputils.HandleAPIResponse(w, r, map[string]any{
 			"applications": ret,
-		}, err, "Error fetching applications")
+		}, err, http.StatusInternalServerError)
 	})
 
-	guest.RegisterHandler("/api/user-access-rules", func(params types.RequestParams) types.Response {
-		applicationId := params.Query().Get("applicationId")
+	http.HandleFunc("/api/user-access-rules", func(w http.ResponseWriter, r *http.Request) {
+		db := r.Context().Value(applib.ContextSqliteDatabaseKey).(*sqlx.DB)
+		applicationId := r.URL.Query().Get("applicationId")
 		var ret []state.UserAccessRule
 		var err error
 
@@ -64,12 +52,32 @@ func init() {
 			ret, err = state.GetAllUserAccessRules(db)
 		}
 
-		return guest.CreateResponse(map[string]any{
+		httputils.HandleAPIResponse(w, r, map[string]any{
 			"rules": ret,
-		}, err, "Error fetching user access rules")
+		}, err, http.StatusInternalServerError)
 	})
-}
 
-// main is required for the `wasi` target, even if it isn't used.
-// See https://wazero.io/languages/tinygo/#why-do-i-have-to-define-main
-func main() {}
+	db := application.GetDatabase()
+
+	// Register event handlers
+	database.AddEventHandler(db, events.DBInitEventType, state.ApplicationsHandleInitEvent)
+	database.AddEventHandler(db, events.DBInitEventType, state.UsersHandleInitEvent)
+	database.AddEventHandler(db, events.DBInitEventType, state.UserAccessRulesHandleInitEvent)
+
+	// User management event handlers
+	database.AddEventHandler(db, state.UserAddedEventType, state.UsersHandleAddedEvent)
+	database.AddEventHandler(db, state.UpdateUserPasswordEventType, state.UsersHandleUpdatePasswordEvent)
+	database.AddEventHandler(db, state.DeleteUserEventType, state.UsersHandleDeleteEvent)
+	database.AddEventHandler(db, state.UpdateUserEventType, state.UsersHandleUpdateEvent)
+
+	// Application management event handlers
+	database.AddEventHandler(db, state.CreateApplicationEventType, state.ApplicationsHandleCreateEvent)
+	database.AddEventHandler(db, state.UpdateApplicationEventType, state.ApplicationsHandleUpdateEvent)
+	database.AddEventHandler(db, state.DeleteApplicationEventType, state.ApplicationsHandleDeleteEvent)
+
+	// User access rules management event handlers
+	database.AddEventHandler(db, state.CreateUserAccessRuleEventType, state.UserAccessRulesHandleCreateEvent)
+	database.AddEventHandler(db, state.DeleteUserAccessRuleEventType, state.UserAccessRulesHandleDeleteEvent)
+
+	application.Serve()
+}

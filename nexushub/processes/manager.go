@@ -327,8 +327,8 @@ func (pm *ProcessManager) reconcileState(ctx context.Context) error {
 		actual, exists := pm.actualState[instanceID]
 		if exists && (actual.GetState() == StateRunning || actual.GetState() == StateUnhealthy || actual.GetState() == StateStarting) {
 			// Process exists and is in a running-like state, check for configuration changes
-			if actual.Instance.WasmPath != desired.WasmPath || actual.Instance.DbName != desired.DbName {
-				pm.logger.Info("Configuration changed for process, initiating restart", "instanceID", instanceID, "oldWasm", actual.Instance.WasmPath, "newWasm", desired.WasmPath, "oldDb", actual.Instance.DbName, "newDb", desired.DbName)
+			if actual.Instance.BinPath != desired.BinPath || actual.Instance.DbName != desired.DbName {
+				pm.logger.Info("Configuration changed for process, initiating restart", "instanceID", instanceID, "oldBin", actual.Instance.BinPath, "newBin", desired.BinPath, "oldDb", actual.Instance.DbName, "newDb", desired.DbName)
 				// Stop the process. The reconciler or exit handler will then pick it up for a restart with the new config.
 				// We run this in a goroutine to avoid blocking the reconciler loop.
 				go func(procToStop *ManagedProcess) {
@@ -410,12 +410,11 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 	pm.logger.Info("Allocated port for process", "instanceID", instance.InstanceID, "port", port)
 
 	cmdArgs := []string{
-		"-wasm", instance.WasmPath,
 		"-dbPath", instance.DbName,
 		"-port", fmt.Sprintf("%d", port),
 	}
 
-	cmd := exec.CommandContext(ctx, serviceHostExecutable, cmdArgs...)
+	cmd := exec.CommandContext(ctx, instance.BinPath, cmdArgs...)
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("HOST=%s", instance.HostName))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("INTERNAL_SECRET=%s", pm.internalSecret))

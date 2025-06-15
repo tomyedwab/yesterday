@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/tomyedwab/yesterday/database/events"
-	"github.com/tomyedwab/yesterday/wasi/guest"
+	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/applib/database/events"
 )
 
 // Application represents an application in the system.
@@ -47,7 +47,7 @@ type DeleteApplicationEvent struct {
 
 // -- Event handlers --
 
-func ApplicationsHandleInitEvent(tx *guest.Tx, event *events.DBInitEvent) (bool, error) {
+func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) {
 	// Create applications table
 	_, err := tx.Exec(`
 		CREATE TABLE applications_v1 (
@@ -92,8 +92,8 @@ func ApplicationsHandleInitEvent(tx *guest.Tx, event *events.DBInitEvent) (bool,
 	return true, nil
 }
 
-func ApplicationsHandleCreateEvent(tx *guest.Tx, event *CreateApplicationEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Creating application: %s", event.DisplayName))
+func ApplicationsHandleCreateEvent(tx *sqlx.Tx, event *CreateApplicationEvent) (bool, error) {
+	fmt.Printf("Creating application: %s\n", event.DisplayName)
 
 	// Generate unique instance ID
 	instanceID := uuid.New().String()
@@ -110,8 +110,8 @@ func ApplicationsHandleCreateEvent(tx *guest.Tx, event *CreateApplicationEvent) 
 	return true, nil
 }
 
-func ApplicationsHandleUpdateEvent(tx *guest.Tx, event *UpdateApplicationEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Updating application: %s", event.InstanceID))
+func ApplicationsHandleUpdateEvent(tx *sqlx.Tx, event *UpdateApplicationEvent) (bool, error) {
+	fmt.Printf("Updating application: %s\n", event.InstanceID)
 
 	result, err := tx.Exec(`
 		UPDATE applications_v1
@@ -135,8 +135,8 @@ func ApplicationsHandleUpdateEvent(tx *guest.Tx, event *UpdateApplicationEvent) 
 	return true, nil
 }
 
-func ApplicationsHandleDeleteEvent(tx *guest.Tx, event *DeleteApplicationEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Deleting application: %s", event.InstanceID))
+func ApplicationsHandleDeleteEvent(tx *sqlx.Tx, event *DeleteApplicationEvent) (bool, error) {
+	fmt.Printf("Deleting application: %s\n", event.InstanceID)
 
 	// Prevent deletion of core system applications
 	if event.InstanceID == "3bf3e3c0-6e51-482a-b180-00f6aa568ee9" ||
@@ -171,14 +171,14 @@ func ApplicationsHandleDeleteEvent(tx *guest.Tx, event *DeleteApplicationEvent) 
 // -- DB Helpers --
 
 // GetApplication retrieves a specific application by its ID.
-func GetApplication(db *guest.DB, instanceId string) (*Application, error) {
+func GetApplication(db *sqlx.DB, instanceId string) (*Application, error) {
 	var app Application
 	err := db.Get(&app, "SELECT instance_id, app_id, display_name, host_name, db_name FROM applications_v1 WHERE instance_id = $1", instanceId)
 	return &app, err
 }
 
 // GetApplications retrieves all applications sorted by display name.
-func GetApplications(db *guest.DB) ([]Application, error) {
+func GetApplications(db *sqlx.DB) ([]Application, error) {
 	ret := []Application{}
 	err := db.Select(&ret, "SELECT instance_id, app_id, display_name, host_name, db_name FROM applications_v1 ORDER BY display_name")
 	if err != nil {

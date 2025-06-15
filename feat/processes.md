@@ -6,7 +6,7 @@
 
 ## 1. Introduction
 
-This document outlines the technical specification for a Go-based process manager. The primary responsibility of this manager is to oversee a collection of subprocesses, ensuring they are running as declared and remain healthy. It will dynamically manage subprocesses based on a declarative configuration, monitor their health via HTTP endpoints, and handle restarts or recovery actions as needed. Each subprocess is an instance of the `dist/bin/servicehost` executable, configured with specific WASM paths, database names, and dynamically assigned ports.
+This document outlines the technical specification for a Go-based process manager. The primary responsibility of this manager is to oversee a collection of subprocesses, ensuring they are running as declared and remain healthy. It will dynamically manage subprocesses based on a declarative configuration, monitor their health via HTTP endpoints, and handle restarts or recovery actions as needed. Each subprocess is an instance of the application executable, configured with specific binary path, database names, and dynamically assigned ports.
 
 The process manager itself will reside in the `database/processes` directory.
 
@@ -30,7 +30,7 @@ The process manager itself will reside in the `database/processes` directory.
 
 The process manager will operate as a standalone Go application or a component within a larger system. It will maintain two primary states:
 
-1.  **Desired State:** A list of application instances (App IDs, WASM paths, DB names) that *should* be running. This list can be updated at runtime.
+1.  **Desired State:** A list of application instances (App IDs, binary paths, DB names) that *should* be running. This list can be updated at runtime.
 2.  **Actual State:** An internal representation of currently running subprocesses, their PIDs, assigned ports, health status, and other relevant metadata.
 
 A central **Reconciler Loop** will continuously compare the desired state with the actual state:
@@ -45,7 +45,7 @@ A separate **Health Monitor** component will periodically poll the `/api/status`
 
 *   **App Instance Definition:** The process manager will expect a declarative list of application instances. Each instance will be defined by:
     *   `InstanceID` (string): A unique identifier for the application instance.
-    *   `WasmPath` (string): The file system path to the WASM module for this instance.
+    *   `BinPath` (string): The file system path to the application binary for this instance.
     *   `DbName` (string): The database name/identifier to be used by this instance.
     *   Other relevant metadata (e.g., specific environment variables, restart policies).
 *   **Runtime Updates:** A mechanism to update the declarative list of application instances will be created later. It is out of scope for the current work.
@@ -54,7 +54,7 @@ A separate **Health Monitor** component will periodically poll the `/api/status`
 
 *   **Starting Subprocesses:**
     1.  Identify an available port (see Port Management).
-    2.  Construct the command: `dist/bin/servicehost -wasm <PATH-TO-WASM> -dbPath <DB-NAME> -port <PORT>`.
+    2.  Construct the command: `<PATH-TO-BIN> -dbPath <DB-NAME> -port <PORT>`.
     3.  Execute the command as a subprocess (`os/exec` package).
     4.  Store the subprocess's PID, assigned port, and other metadata in the internal 'actual state' list.
     5.  Log the start event.
@@ -94,9 +94,8 @@ A separate **Health Monitor** component will periodically poll the `/api/status`
 
 ### 5.5. Subprocess Execution
 
-*   **Executable Path:** The manager will assume `dist/bin/servicehost` is a fixed, known path or configurable.
+*   **Executable Path:** The manager will call the binary at `<PATH-TO-BIN>`.
 *   **Command-Line Arguments:** Arguments will be constructed as follows:
-    *   `-wasm <PATH-TO-WASM>`: Derived from the `WasmPath` metadata of the app instance.
     *   `-dbPath <DB-NAME>`: Derived from the `DbName` metadata of the app instance.
     *   `-port <PORT>`: The dynamically assigned port.
 *   **Standard Streams:** The manager should capture `stdout` and `stderr` from subprocesses for logging and debugging purposes.
@@ -113,7 +112,7 @@ While a public API for external control might not be in the initial scope, inter
 ## 7. Error Handling and Resilience
 
 *   **Manager Crashes:** If the process manager itself crashes, running subprocesses will continue to run (orphaned). Upon restart, the manager should attempt to reconcile its state, potentially by identifying existing `servicehost` processes (e.g., by scanning processes or looking for lock files with port information, though this can be complex).
-*   **Startup Failures:** If a subprocess fails to start (e.g., `servicehost` executable not found, invalid WASM path), this should be logged, and the manager should not continuously retry without a backoff.
+*   **Startup Failures:** If a subprocess fails to start (e.g., `servicehost` executable not found, invalid binary path), this should be logged, and the manager should not continuously retry without a backoff.
 *   **Health Check Failures:** Handled by the restart mechanism with backoff.
 *   **Port Conflicts:** The port allocation mechanism should prevent conflicts. If a conflict occurs unexpectedly, it should be logged, and an alternative port should be tried.
 

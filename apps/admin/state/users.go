@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/tomyedwab/yesterday/database/events"
-	"github.com/tomyedwab/yesterday/wasi/guest"
+	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/applib/database/events"
 )
 
 type User struct {
@@ -47,7 +47,7 @@ type UpdateUserEvent struct {
 
 // -- DB Helpers --
 
-func GetUser(db *guest.DB, username string) (*User, error) {
+func GetUser(db *sqlx.DB, username string) (*User, error) {
 	var user User
 	err := db.Get(&user, "SELECT id, username, salt, password_hash FROM users_v1 WHERE username = $1", username)
 	return &user, err
@@ -55,7 +55,7 @@ func GetUser(db *guest.DB, username string) (*User, error) {
 
 // -- Event handlers --
 
-func UsersHandleInitEvent(tx *guest.Tx, event *events.DBInitEvent) (bool, error) {
+func UsersHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) {
 	// Generate a random salt for the admin user
 	salt := uuid.New().String()
 	hasher := sha256.New()
@@ -93,8 +93,8 @@ func UsersHandleInitEvent(tx *guest.Tx, event *events.DBInitEvent) (bool, error)
 	return true, nil
 }
 
-func UsersHandleAddedEvent(tx *guest.Tx, event *UserAddedEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Adding user: %s", event.Username))
+func UsersHandleAddedEvent(tx *sqlx.Tx, event *UserAddedEvent) (bool, error) {
+	fmt.Printf("Adding user: %s\n", event.Username)
 	// Create random salt
 	salt := uuid.New().String()
 
@@ -115,8 +115,8 @@ func UsersHandleAddedEvent(tx *guest.Tx, event *UserAddedEvent) (bool, error) {
 	return true, nil
 }
 
-func UsersHandleUpdatePasswordEvent(tx *guest.Tx, event *UpdateUserPasswordEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Updating password for user ID: %d", event.UserID))
+func UsersHandleUpdatePasswordEvent(tx *sqlx.Tx, event *UpdateUserPasswordEvent) (bool, error) {
+	fmt.Printf("Updating password for user ID: %d\n", event.UserID)
 
 	// Generate new salt and hash password
 	salt := uuid.New().String()
@@ -142,8 +142,8 @@ func UsersHandleUpdatePasswordEvent(tx *guest.Tx, event *UpdateUserPasswordEvent
 	return true, nil
 }
 
-func UsersHandleDeleteEvent(tx *guest.Tx, event *DeleteUserEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Deleting user ID: %d", event.UserID))
+func UsersHandleDeleteEvent(tx *sqlx.Tx, event *DeleteUserEvent) (bool, error) {
+	fmt.Printf("Deleting user ID: %d\n", event.UserID)
 
 	// Prevent deletion of admin user (ID = 1)
 	if event.UserID == 1 {
@@ -175,8 +175,8 @@ func UsersHandleDeleteEvent(tx *guest.Tx, event *DeleteUserEvent) (bool, error) 
 	return true, nil
 }
 
-func UsersHandleUpdateEvent(tx *guest.Tx, event *UpdateUserEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Updating user ID: %d with username: %s", event.UserID, event.Username))
+func UsersHandleUpdateEvent(tx *sqlx.Tx, event *UpdateUserEvent) (bool, error) {
+	fmt.Printf("Updating user ID: %d with username: %s\n", event.UserID, event.Username)
 
 	// Prevent updating admin user ID (ID = 1) to different username
 	if event.UserID == 1 && event.Username != "admin" {
@@ -203,7 +203,7 @@ func UsersHandleUpdateEvent(tx *guest.Tx, event *UpdateUserEvent) (bool, error) 
 
 // -- Getters --
 
-func GetUsers(db *guest.DB) ([]User, error) {
+func GetUsers(db *sqlx.DB) ([]User, error) {
 	ret := []User{}
 	err := db.Select(&ret, "SELECT id, username FROM users_v1")
 	if err != nil {

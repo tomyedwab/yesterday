@@ -3,8 +3,8 @@ package state
 import (
 	"fmt"
 
-	"github.com/tomyedwab/yesterday/database/events"
-	"github.com/tomyedwab/yesterday/wasi/guest"
+	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/applib/database/events"
 )
 
 // RuleType represents the type of access rule (ACCEPT or DENY)
@@ -58,7 +58,7 @@ type DeleteUserAccessRuleEvent struct {
 
 // -- Event handlers --
 
-func UserAccessRulesHandleInitEvent(tx *guest.Tx, event *events.DBInitEvent) (bool, error) {
+func UserAccessRulesHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) {
 	// Create user_access_rules table
 	_, err := tx.Exec(`
 		CREATE TABLE user_access_rules_v1 (
@@ -103,8 +103,8 @@ func UserAccessRulesHandleInitEvent(tx *guest.Tx, event *events.DBInitEvent) (bo
 	return true, nil
 }
 
-func UserAccessRulesHandleCreateEvent(tx *guest.Tx, event *CreateUserAccessRuleEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Creating user access rule for application: %s", event.ApplicationID))
+func UserAccessRulesHandleCreateEvent(tx *sqlx.Tx, event *CreateUserAccessRuleEvent) (bool, error) {
+	fmt.Printf("Creating user access rule for application: %s\n", event.ApplicationID)
 
 	_, err := tx.Exec(`
 		INSERT INTO user_access_rules_v1 (application_id, rule_type, subject_type, subject_id)
@@ -118,8 +118,8 @@ func UserAccessRulesHandleCreateEvent(tx *guest.Tx, event *CreateUserAccessRuleE
 	return true, nil
 }
 
-func UserAccessRulesHandleDeleteEvent(tx *guest.Tx, event *DeleteUserAccessRuleEvent) (bool, error) {
-	guest.WriteLog(fmt.Sprintf("Deleting user access rule ID: %d", event.RuleID))
+func UserAccessRulesHandleDeleteEvent(tx *sqlx.Tx, event *DeleteUserAccessRuleEvent) (bool, error) {
+	fmt.Printf("Deleting user access rule ID: %d\n", event.RuleID)
 
 	result, err := tx.Exec(`DELETE FROM user_access_rules_v1 WHERE id = $1`, event.RuleID)
 	if err != nil {
@@ -141,7 +141,7 @@ func UserAccessRulesHandleDeleteEvent(tx *guest.Tx, event *DeleteUserAccessRuleE
 // -- DB Helpers --
 
 // GetUserAccessRulesForApplication retrieves all access rules for a specific application.
-func GetUserAccessRulesForApplication(db *guest.DB, applicationID string) ([]UserAccessRule, error) {
+func GetUserAccessRulesForApplication(db *sqlx.DB, applicationID string) ([]UserAccessRule, error) {
 	var rules []UserAccessRule
 	err := db.Select(&rules, `
 		SELECT id, application_id, rule_type, subject_type, subject_id, created_at
@@ -152,7 +152,7 @@ func GetUserAccessRulesForApplication(db *guest.DB, applicationID string) ([]Use
 }
 
 // GetAllUserAccessRules retrieves all access rules, optionally filtered by application ID.
-func GetAllUserAccessRules(db *guest.DB) ([]UserAccessRule, error) {
+func GetAllUserAccessRules(db *sqlx.DB) ([]UserAccessRule, error) {
 	var rules []UserAccessRule
 	err := db.Select(&rules, `
 		SELECT id, application_id, rule_type, subject_type, subject_id, created_at
@@ -164,7 +164,7 @@ func GetAllUserAccessRules(db *guest.DB) ([]UserAccessRule, error) {
 // CheckUserAccess determines if a user has access to an application based on access rules.
 // Priority order: USER ACCEPT/DENY rules first, then GROUP ACCEPT/DENY rules.
 // If no rule applies, access is denied by default.
-func CheckUserAccess(db *guest.DB, applicationID string, userID int) (bool, error) {
+func CheckUserAccess(db *sqlx.DB, applicationID string, userID int) (bool, error) {
 	var rules []UserAccessRule
 	err := db.Select(&rules, `
 		SELECT rule_type, subject_type, subject_id
@@ -202,7 +202,7 @@ func CheckUserAccess(db *guest.DB, applicationID string, userID int) (bool, erro
 }
 
 // AddUserAccessRule adds a new access rule.
-func AddUserAccessRule(db *guest.DB, applicationID string, ruleType RuleType, subjectType SubjectType, subjectID string) error {
+func AddUserAccessRule(db *sqlx.DB, applicationID string, ruleType RuleType, subjectType SubjectType, subjectID string) error {
 	_, err := db.Exec(`
 		INSERT INTO user_access_rules_v1 (application_id, rule_type, subject_type, subject_id)
 		VALUES ($1, $2, $3, $4)`,
@@ -215,7 +215,7 @@ func AddUserAccessRule(db *guest.DB, applicationID string, ruleType RuleType, su
 }
 
 // RemoveUserAccessRule removes an access rule by ID.
-func RemoveUserAccessRule(db *guest.DB, ruleID int) error {
+func RemoveUserAccessRule(db *sqlx.DB, ruleID int) error {
 	result, err := db.Exec("DELETE FROM user_access_rules_v1 WHERE id = $1", ruleID)
 	if err != nil {
 		return fmt.Errorf("failed to remove user access rule: %w", err)
@@ -234,7 +234,7 @@ func RemoveUserAccessRule(db *guest.DB, ruleID int) error {
 }
 
 // GetUserAccessRule retrieves a specific access rule by ID.
-func GetUserAccessRule(db *guest.DB, ruleID int) (*UserAccessRule, error) {
+func GetUserAccessRule(db *sqlx.DB, ruleID int) (*UserAccessRule, error) {
 	var rule UserAccessRule
 	err := db.Get(&rule, `
 		SELECT id, application_id, rule_type, subject_type, subject_id, created_at

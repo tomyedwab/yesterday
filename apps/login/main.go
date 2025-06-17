@@ -23,6 +23,7 @@ func main() {
 	application.AddContextVar(sessions.SessionManagerKey, sessionManager)
 
 	http.HandleFunc("/public/login", handlers.HandleLogin)
+	http.HandleFunc("/public/logout", handlers.HandleLogout)
 	http.HandleFunc("/internal/access_token", handlers.HandleAccessToken)
 
 	application.Serve()

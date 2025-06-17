@@ -24,6 +24,7 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request) {
 	session, err := sessionManager.GetSessionByRefreshToken(tokenRequest.RefreshToken)
 	if err != nil || session == nil {
 		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("invalid refresh token"), http.StatusUnauthorized)
+		return
 	}
 
 	accessRequestJson, _ := json.Marshal(&admin_types.AccessRequest{

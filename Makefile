@@ -2,7 +2,7 @@ build:
 	mkdir -p dist/0001-0001 dist/0001-0002 dist/bin
 	go build -o dist/0001-0001/app.bin apps/login/main.go
 	go build -o dist/0001-0002/app.bin apps/admin/main.go
-	go build -o dist/bin/nexushub cmd/nexushub/main.go
+	go build -o dist/bin/nexushub nexushub/cmd/serve/main.go
 
 serve: build
 	if command -v hl >/dev/null 2>&1; then \

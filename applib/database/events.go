@@ -60,7 +60,7 @@ func EventDBCreateEvent(tx *sqlx.Tx, eventData []byte, clientId string) (int, er
 			ClientId: clientId,
 		}
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != sql.ErrNoRows {
 		return 0, err
 	}
 

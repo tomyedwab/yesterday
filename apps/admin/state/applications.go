@@ -14,7 +14,6 @@ type Application struct {
 	AppID       string `db:"app_id" json:"appId"`
 	DisplayName string `db:"display_name" json:"displayName"`
 	HostName    string `db:"host_name" json:"hostName"`
-	DBName      string `db:"db_name" json:"dbName"`
 }
 
 // Event types for application management
@@ -28,7 +27,6 @@ type CreateApplicationEvent struct {
 	AppID       string `json:"appId"`
 	DisplayName string `json:"displayName"`
 	HostName    string `json:"hostName"`
-	DBName      string `json:"dbName"`
 }
 
 type UpdateApplicationEvent struct {
@@ -37,7 +35,6 @@ type UpdateApplicationEvent struct {
 	AppID       string `json:"appId"`
 	DisplayName string `json:"displayName"`
 	HostName    string `json:"hostName"`
-	DBName      string `json:"dbName"`
 }
 
 type DeleteApplicationEvent struct {
@@ -54,8 +51,7 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 			instance_id TEXT PRIMARY KEY,
 			app_id TEXT NOT NULL,
 			display_name TEXT NOT NULL,
-			host_name TEXT NOT NULL,
-			db_name TEXT NOT NULL
+			host_name TEXT NOT NULL
 		)`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create applications table: %w", err)
@@ -73,16 +69,16 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, db_name)
-		SELECT '3bf3e3c0-6e51-482a-b180-00f6aa568ee9', '0001-0001', 'Login service', 'login.yesterday.localhost:8443', 'db/sessions.db'
+		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
+		SELECT '3bf3e3c0-6e51-482a-b180-00f6aa568ee9', 'github.com/tomyedwab/yesterday/apps/login', 'Login service', 'login.yesterday.localhost:8443'
 	`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create login application: %w", err)
 	}
 
 	_, err = tx.Exec(`
-		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, db_name)
-		SELECT '18736e4f-93f9-4606-a7be-863c7986ea5b', '0001-0002', 'Admin service', 'admin.yesterday.localhost:8443', 'db/admin.db'
+		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
+		SELECT '18736e4f-93f9-4606-a7be-863c7986ea5b', 'github.com/tomyedwab/yesterday/apps/admin', 'Admin service', 'admin.yesterday.localhost:8443'
 	`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create admin application: %w", err)
@@ -99,9 +95,9 @@ func ApplicationsHandleCreateEvent(tx *sqlx.Tx, event *CreateApplicationEvent) (
 	instanceID := uuid.New().String()
 
 	_, err := tx.Exec(`
-		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, db_name)
-		VALUES ($1, $2, $3, $4, $5)`,
-		instanceID, event.AppID, event.DisplayName, event.HostName, event.DBName)
+		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
+		VALUES ($1, $2, $3, $4)`,
+		instanceID, event.AppID, event.DisplayName, event.HostName)
 
 	if err != nil {
 		return false, fmt.Errorf("failed to create application %s: %w", event.DisplayName, err)
@@ -115,9 +111,9 @@ func ApplicationsHandleUpdateEvent(tx *sqlx.Tx, event *UpdateApplicationEvent) (
 
 	result, err := tx.Exec(`
 		UPDATE applications_v1
-		SET app_id = $1, display_name = $2, host_name = $3, db_name = $4
-		WHERE instance_id = $5`,
-		event.AppID, event.DisplayName, event.HostName, event.DBName, event.InstanceID)
+		SET app_id = $1, display_name = $2, host_name = $3
+		WHERE instance_id = $4`,
+		event.AppID, event.DisplayName, event.HostName, event.InstanceID)
 
 	if err != nil {
 		return false, fmt.Errorf("failed to update application %s: %w", event.InstanceID, err)
@@ -173,14 +169,14 @@ func ApplicationsHandleDeleteEvent(tx *sqlx.Tx, event *DeleteApplicationEvent) (
 // GetApplication retrieves a specific application by its ID.
 func GetApplication(db *sqlx.DB, instanceId string) (*Application, error) {
 	var app Application
-	err := db.Get(&app, "SELECT instance_id, app_id, display_name, host_name, db_name FROM applications_v1 WHERE instance_id = $1", instanceId)
+	err := db.Get(&app, "SELECT instance_id, app_id, display_name, host_name FROM applications_v1 WHERE instance_id = $1", instanceId)
 	return &app, err
 }
 
 // GetApplications retrieves all applications sorted by display name.
 func GetApplications(db *sqlx.DB) ([]Application, error) {
 	ret := []Application{}
-	err := db.Select(&ret, "SELECT instance_id, app_id, display_name, host_name, db_name FROM applications_v1 ORDER BY display_name")
+	err := db.Select(&ret, "SELECT instance_id, app_id, display_name, host_name FROM applications_v1 ORDER BY display_name")
 	if err != nil {
 		return ret, fmt.Errorf("failed to select all applications: %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"strings" // For string manipulation
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
@@ -104,40 +105,38 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var resolutionIdentifier string        // For logging: "AppID 'xyz'" or "hostname 'abc.com'"
 	var originalHostForLog string = r.Host // Capture original host for logging before it's modified
 
+	traceID := uuid.New().String()
+
 	appID := r.Header.Get("X-Application-Id")
 
 	if appID != "" {
-		resolutionIdentifier = "AppID '" + appID + "'"
-		log.Printf("Attempting to resolve request using %s (original host: %s)", resolutionIdentifier, originalHostForLog)
+		resolutionIdentifier = "app:" + appID
 		instance, port, err = p.pm.GetAppInstanceByID(appID)
 		if err != nil {
-			log.Printf("Error resolving %s: %v", resolutionIdentifier, err)
 			http.Error(w, "Service not found for "+resolutionIdentifier, http.StatusNotFound)
+			log.Printf("<%s> %s%s 404 [Service not found]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
 		if instance == nil {
-			log.Printf("No active instance found for %s", resolutionIdentifier)
 			http.Error(w, "Service unavailable for "+resolutionIdentifier, http.StatusServiceUnavailable)
+			log.Printf("<%s> %s%s 404 [No active instances]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
-		log.Printf("Successfully resolved %s to instance ID '%s' (Port: %d)", resolutionIdentifier, instance.InstanceID, port)
 	} else {
 		// Fallback to hostname-based routing
 		hostname := originalHostForLog // r.Host includes port if specified by client
-		resolutionIdentifier = "hostname '" + hostname + "'"
-		log.Printf("Attempting to resolve request using %s (X-Application-Id header not found or empty)", resolutionIdentifier)
+		resolutionIdentifier = "host:" + hostname
 		instance, port, err = p.pm.GetAppInstanceByHostName(hostname)
 		if err != nil {
-			log.Printf("Error resolving %s: %v", resolutionIdentifier, err)
 			http.Error(w, "Service not found for "+resolutionIdentifier, http.StatusNotFound)
+			log.Printf("<%s> %s%s 404 [Service not found]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
 		if instance == nil {
-			log.Printf("No active instance found for %s", resolutionIdentifier)
 			http.Error(w, "Service unavailable for "+resolutionIdentifier, http.StatusServiceUnavailable)
+			log.Printf("<%s> %s%s 404 [No active instances]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
-		log.Printf("Successfully resolved %s to instance ID '%s' (Port: %d)", resolutionIdentifier, instance.InstanceID, port)
 	}
 
 	if r.URL.Path == "/api/set_token" {
@@ -146,6 +145,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		continueURL := r.URL.Query().Get("continue")
 		if token == "" || continueURL == "" {
 			http.Error(w, "Missing token or continue URL", http.StatusBadRequest)
+			log.Printf("<%s> %s/api/set_token 400", traceID, resolutionIdentifier)
 			return
 		}
 		// Set the cookie with the token and redirect to the continue URL
@@ -156,10 +156,12 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Set-Cookie", "YRT="+token+"; Path=/; Domain="+targetDomain+"; HttpOnly; Secure; SameSite=None")
 		w.Header().Set("Location", continueURL)
 		w.WriteHeader(http.StatusFound)
+		log.Printf("<%s> %s/api/set_token 302", traceID, resolutionIdentifier)
 		return
 	}
 	if r.URL.Path == "/api/access_token" {
-		access.HandleAccessTokenRequest(p.pm, instance, w, r)
+		code := access.HandleAccessTokenRequest(p.pm, instance, w, r, traceID)
+		log.Printf("<%s> %s/api/access_token %d", traceID, resolutionIdentifier, code)
 		return
 	}
 
@@ -173,8 +175,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
 		reverseProxy.Transport = p.transport
 		r.Host = targetURL.Host
+		r.Header.Add("X-Trace-ID", traceID)
 
-		log.Printf("Proxying public API request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
 		reverseProxy.ServeHTTP(w, r)
 		return
 	}
@@ -184,16 +187,20 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		// Validate authorization for API endpoints
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			log.Printf("Missing or invalid Authorization header for API request %s (%s)", r.URL.Path, resolutionIdentifier)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s%s => 401 [Missing token]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		valid := access.ValidateAccessToken(token, instance.InstanceID)
+
+		valid := token == p.internalSecret
 		if !valid {
-			log.Printf("Invalid access token for API request %s (%s)", r.URL.Path, resolutionIdentifier)
+			valid = access.ValidateAccessToken(token, instance.InstanceID)
+		}
+		if !valid {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s%s => 401 [Invalid token]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
 
@@ -206,8 +213,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
 		reverseProxy.Transport = p.transport
 		r.Host = targetURL.Host
+		r.Header.Add("X-Trace-ID", traceID)
 
-		log.Printf("Proxying authorized API request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
 		reverseProxy.ServeHTTP(w, r)
 		return
 	}
@@ -215,8 +223,8 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Handle /internal/ paths
 	if strings.HasPrefix(r.URL.Path, "/internal/") {
 		if r.Header.Get("Authorization") != "Bearer "+p.internalSecret {
-			log.Printf("Invalid authorization header for internal request %s (%s)", r.URL.Path, resolutionIdentifier)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s%s => 401 [Invalid token]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
 		targetURL := &url.URL{
@@ -227,8 +235,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
 		reverseProxy.Transport = p.transport
 		r.Host = targetURL.Host
+		r.Header.Add("X-Trace-ID", traceID)
 
-		log.Printf("Proxying internal request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
 		reverseProxy.ServeHTTP(w, r)
 		return
 	}
@@ -245,8 +254,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		// Update the request host to match the target for the reverse proxy.
 		r.Host = targetURL.Host
+		r.Header.Add("X-Trace-ID", traceID)
 
-		log.Printf("Proxying debug request %s (%s) to target %s", r.URL.Path, resolutionIdentifier, targetURL.String())
+		log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
 		reverseProxy.ServeHTTP(w, r)
 		return
 
@@ -262,18 +272,18 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		cleanFilePath := filepath.Clean(filePath)
 
 		if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
-			log.Printf("Forbidden: Attempt to access path '%s' (from requested path '%s') outside of StaticPath '%s' for %s (instance ID '%s')", cleanFilePath, r.URL.Path, cleanStaticPath, resolutionIdentifier, instance.InstanceID)
 			http.Error(w, "Forbidden", http.StatusForbidden)
+			log.Printf("<%s> %s%s 403 [Invalid path]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
 
 		fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
 		if statErr == nil {                         // File or directory exists at cleanFilePath
 			if !fileInfo.IsDir() { // It's a file
-				log.Printf("Serving static file %s for %s (instance ID '%s', request path: %s)", cleanFilePath, resolutionIdentifier, instance.InstanceID, r.URL.Path)
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				w.Header().Set("Access-Control-Allow-Methods", "GET")
 				w.Header().Set("Access-Control-Max-Age", "86400")
+				log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, cleanFilePath)
 				http.ServeFile(w, r, cleanFilePath)
 				return
 			}
@@ -282,8 +292,8 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No matching route found
-	log.Printf("No route found for request %s (%s)", r.URL.Path, resolutionIdentifier)
 	http.Error(w, "Not Found", http.StatusNotFound)
+	log.Printf("<%s> %s%s 404 [No route found]", traceID, resolutionIdentifier, r.URL.Path)
 }
 
 // Stop gracefully shuts down the proxy server.

@@ -201,7 +201,6 @@ export const ApplicationsList = () => {
             <Table.ColumnHeader>Display Name</Table.ColumnHeader>
             <Table.ColumnHeader>App ID</Table.ColumnHeader>
             <Table.ColumnHeader>Host Name</Table.ColumnHeader>
-            <Table.ColumnHeader>Database</Table.ColumnHeader>
             <Table.ColumnHeader>Type</Table.ColumnHeader>
             <Table.ColumnHeader>Instance ID</Table.ColumnHeader>
             <Table.ColumnHeader width="160px">Actions</Table.ColumnHeader>
@@ -220,11 +219,6 @@ export const ApplicationsList = () => {
               </Table.Cell>
               <Table.Cell>
                 <Text fontSize="sm">{app.hostName}</Text>
-              </Table.Cell>
-              <Table.Cell>
-                <Text fontFamily="mono" fontSize="sm">
-                  {app.dbName}
-                </Text>
               </Table.Cell>
               <Table.Cell>
                 {getApplicationTypeBadge(app.appId, app.displayName)}

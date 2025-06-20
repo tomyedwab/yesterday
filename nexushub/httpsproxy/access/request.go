@@ -19,17 +19,18 @@ func HandleAccessTokenRequest(
 	instance *processes.AppInstance,
 	w http.ResponseWriter,
 	r *http.Request,
-) {
+	traceID string,
+) int {
 	loginInstance, loginPort, err := pm.GetAppInstanceByID("3bf3e3c0-6e51-482a-b180-00f6aa568ee9")
 	if err != nil {
-		log.Printf("Error resolving login service: %v", err)
+		log.Printf("<%s> Error resolving login service: %v", traceID, err)
 		http.Error(w, "Login service not found", http.StatusNotFound)
-		return
+		return http.StatusNotFound
 	}
 	if loginInstance == nil {
-		log.Printf("No active login instance found")
+		log.Printf("<%s> No active login instance found", traceID)
 		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
-		return
+		return http.StatusServiceUnavailable
 	}
 
 	// Get refresh token from cookie
@@ -41,7 +42,7 @@ func HandleAccessTokenRequest(
 		})
 		w.WriteHeader(http.StatusOK)
 		w.Write(respJson)
-		return
+		return http.StatusOK
 	}
 
 	req := types.AccessTokenRequest{
@@ -52,7 +53,7 @@ func HandleAccessTokenRequest(
 	resp, err := http.Post(fmt.Sprintf("http://localhost:%d/internal/access_token", loginPort), "application/json", bytes.NewBuffer(reqJson))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error while refreshing token: %v", err), http.StatusServiceUnavailable)
-		return
+		return http.StatusServiceUnavailable
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -63,15 +64,15 @@ func HandleAccessTokenRequest(
 			})
 			w.WriteHeader(http.StatusOK)
 			w.Write(respJson)
-			return
+			return http.StatusOK
 		}
 		http.Error(w, fmt.Sprintf("error while refreshing token: %v: %s", resp.Status, string(message)), resp.StatusCode)
-		return
+		return resp.StatusCode
 	}
 	var tokenResponse types.AccessTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResponse); err != nil {
 		http.Error(w, fmt.Sprintf("error while decoding token response: %v", err), http.StatusInternalServerError)
-		return
+		return http.StatusInternalServerError
 	}
 
 	createAccessToken(&tokenResponse)
@@ -88,4 +89,5 @@ func HandleAccessTokenRequest(
 		"access_token": tokenResponse.AccessToken,
 	})
 	w.Write(respJson)
+	return http.StatusOK
 }

@@ -18,14 +18,9 @@ func Init(serverVersion string) (*Application, error) {
 		return nil, fmt.Errorf("Database path must be provided via -dbPath flag")
 	}
 
-	db, err := database.Connect("sqlite3", *dbPath)
+	db, err := database.Connect("sqlite3", *dbPath, serverVersion)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to connect to database: %v", err)
-	}
-
-	err = db.Initialize()
-	if err != nil {
-		return nil, err
 	}
 
 	return NewApplication(serverVersion, *port, db), nil

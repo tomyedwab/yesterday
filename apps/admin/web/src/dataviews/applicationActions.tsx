@@ -1,5 +1,8 @@
-import { useState } from 'react';
-import { useConnectionDispatch, CreatePendingEvent } from '@tomyedwab/yesterday';
+import { useState } from "react";
+import {
+  useConnectionDispatch,
+  CreatePendingEvent,
+} from "@tomyedwab/yesterday";
 
 export interface ApplicationActionResult {
   success: boolean;
@@ -10,7 +13,6 @@ export interface CreateApplicationRequest {
   appId: string;
   displayName: string;
   hostName: string;
-  dbName: string;
 }
 
 export interface UpdateApplicationRequest {
@@ -18,7 +20,6 @@ export interface UpdateApplicationRequest {
   appId: string;
   displayName: string;
   hostName: string;
-  dbName: string;
 }
 
 export interface DeleteApplicationRequest {
@@ -29,7 +30,9 @@ export const useCreateApplication = () => {
   const [isLoading, setIsLoading] = useState(false);
   const connectDispatch = useConnectionDispatch();
 
-  const createApplication = async (request: CreateApplicationRequest): Promise<ApplicationActionResult> => {
+  const createApplication = async (
+    request: CreateApplicationRequest,
+  ): Promise<ApplicationActionResult> => {
     setIsLoading(true);
     try {
       connectDispatch(
@@ -38,12 +41,14 @@ export const useCreateApplication = () => {
           appId: request.appId,
           displayName: request.displayName,
           hostName: request.hostName,
-          dbName: request.dbName,
-        })
+        }),
       );
       return { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     } finally {
       setIsLoading(false);
     }
@@ -56,7 +61,9 @@ export const useUpdateApplication = () => {
   const [isLoading, setIsLoading] = useState(false);
   const connectDispatch = useConnectionDispatch();
 
-  const updateApplication = async (request: UpdateApplicationRequest): Promise<ApplicationActionResult> => {
+  const updateApplication = async (
+    request: UpdateApplicationRequest,
+  ): Promise<ApplicationActionResult> => {
     setIsLoading(true);
     try {
       connectDispatch(
@@ -66,12 +73,14 @@ export const useUpdateApplication = () => {
           appId: request.appId,
           displayName: request.displayName,
           hostName: request.hostName,
-          dbName: request.dbName,
-        })
+        }),
       );
       return { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     } finally {
       setIsLoading(false);
     }
@@ -84,18 +93,23 @@ export const useDeleteApplication = () => {
   const [isLoading, setIsLoading] = useState(false);
   const connectDispatch = useConnectionDispatch();
 
-  const deleteApplication = async (request: DeleteApplicationRequest): Promise<ApplicationActionResult> => {
+  const deleteApplication = async (
+    request: DeleteApplicationRequest,
+  ): Promise<ApplicationActionResult> => {
     setIsLoading(true);
     try {
       connectDispatch(
         CreatePendingEvent("deleteapp:", {
           type: "DeleteApplication",
           instanceId: request.instanceId,
-        })
+        }),
       );
       return { success: true };
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     } finally {
       setIsLoading(false);
     }

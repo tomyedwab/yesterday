@@ -24,6 +24,6 @@ go.work.sum
 # env file
 .env
 
-db
 refresh_token.txt
 typescript/node_modules
+dist/github.com

@@ -18,31 +18,34 @@ import (
 func main() {
 	var httpProxy *httpsproxy.Proxy // Declare proxy variable for access in shutdown handler
 
+	internalSecret := uuid.New().String()
+
 	// 1. Setup logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	slog.SetDefault(logger)
 
 	logger.Info("Starting NexusHub Process Manager")
 
-	// 2. Create AppInstanceProvider with startup instances
-	sampleInstances := []processes.AppInstance{
+	// 2. Create AdminInstanceProvider with static instances for critical services
+	staticApps := []processes.StaticAppConfig{
 		{
 			InstanceID: "3bf3e3c0-6e51-482a-b180-00f6aa568ee9",
 			HostName:   "login.yesterday.localhost:8443",
-			StaticPath: "dist/0001-0001/static",
-			BinPath:    "dist/0001-0001/app.bin",
-			DbName:     "db/sessions.db",
+			StaticPath: "dist/github.com/tomyedwab/yesterday/apps/login/static",
+			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/login/app.bin",
+			DbName:     "dist/github.com/tomyedwab/yesterday/apps/login/app.db",
+			DebugPort:  0,
 		},
 		{
 			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",
 			HostName:   "admin.yesterday.localhost:8443",
-			StaticPath: "dist/0001-0002/static",
-			BinPath:    "dist/0001-0002/app.bin",
-			DbName:     "db/admin.db",
+			StaticPath: "dist/github.com/tomyedwab/yesterday/apps/admin/static",
+			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/admin/app.bin",
+			DbName:     "dist/github.com/tomyedwab/yesterday/apps/admin/app.db",
 			DebugPort:  5173,
 		},
 	}
-	appProvider := processes.NewSimpleAppInstanceProvider(sampleInstances)
+	appProvider := processes.NewAdminInstanceProvider("18736e4f-93f9-4606-a7be-863c7986ea5b", internalSecret, staticApps)
 
 	// 3. Initialize PortManager
 	portManager, err := processes.NewPortManager(10000, 19999)
@@ -59,8 +62,6 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("Project root", "path", projectRoot)
-
-	internalSecret := uuid.New().String()
 
 	pmConfig := processes.Config{
 		AppProvider:            appProvider,
@@ -85,6 +86,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	processManager.SetFirstReconcileCompleteCallback(func() {
+		// Start the admin instance provider only once we've successfully
+		// started the static applications, including the admin application
+		// itself
+		if err := appProvider.Start(ctx); err != nil {
+			logger.Error("Failed to start AdminInstanceProvider", "error", err)
+			os.Exit(1)
+		}
+	})
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -102,6 +113,12 @@ func main() {
 			}
 		} else {
 			logger.Info("HTTPS Proxy was not initialized, skipping stop.")
+		}
+
+		// Stop admin instance provider
+		if appProvider != nil {
+			logger.Info("Stopping AdminInstanceProvider...")
+			appProvider.Stop()
 		}
 
 		// Initiate process manager shutdown

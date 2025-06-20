@@ -26,5 +26,10 @@ func main() {
 	http.HandleFunc("/public/logout", handlers.HandleLogout)
 	http.HandleFunc("/internal/access_token", handlers.HandleAccessToken)
 
+	err = application.GetDatabase().Initialize()
+	if err != nil {
+		panic(err)
+	}
+
 	application.Serve()
 }

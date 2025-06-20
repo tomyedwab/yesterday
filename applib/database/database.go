@@ -24,7 +24,7 @@ type Database struct {
 	PublishEventCB func(event events.Event) error
 }
 
-func Connect(driverName string, dataSourceName string) (*Database, error) {
+func Connect(driverName string, dataSourceName, version string) (*Database, error) {
 	db, err := sqlx.Connect(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
@@ -32,11 +32,8 @@ func Connect(driverName string, dataSourceName string) (*Database, error) {
 	return &Database{
 		db:       db,
 		handlers: make(map[string][]GenericEventHandler),
+		version:  version,
 	}, nil
-}
-
-func (db *Database) SetVersion(version string) {
-	db.version = version
 }
 
 func AddEventHandler[T events.Event](db *Database, eventType string, handler EventHandler[T]) {

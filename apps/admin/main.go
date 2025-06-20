@@ -79,5 +79,10 @@ func main() {
 	database.AddEventHandler(db, state.CreateUserAccessRuleEventType, state.UserAccessRulesHandleCreateEvent)
 	database.AddEventHandler(db, state.DeleteUserAccessRuleEventType, state.UserAccessRulesHandleDeleteEvent)
 
+	err = db.Initialize()
+	if err != nil {
+		panic(err)
+	}
+
 	application.Serve()
 }

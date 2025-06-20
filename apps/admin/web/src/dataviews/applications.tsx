@@ -5,7 +5,6 @@ export type Application = {
   appId: string;
   displayName: string;
   hostName: string;
-  dbName: string;
 };
 
 export function useApplicationsView(): [boolean, Application[]] {

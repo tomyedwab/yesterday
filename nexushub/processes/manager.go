@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -55,6 +56,11 @@ type ProcessManager struct {
 
 	// Working directory for subprocesses
 	subprocessWorkDir string
+
+	// First reconciliation completion callback management
+	onFirstReconcileComplete func()     // Callback function to fire on first successful reconcile
+	firstReconcileComplete   bool       // Flag to track if first reconcile has completed
+	callbackMu               sync.Mutex // Protects callback-related fields
 }
 
 // Config holds configuration options for the ProcessManager.
@@ -70,6 +76,15 @@ type Config struct {
 	RestartBackoffMax      time.Duration // Optional, defaults to 30s
 	GracefulShutdownPeriod time.Duration // Optional, defaults to 10s
 	SubprocessWorkDir      string        // Optional, defaults to current directory
+	// OnFirstReconcileComplete is an optional callback function that will be called exactly once
+	// when the first reconciliation process completes successfully with all desired processes
+	// running and healthy. This is useful for:
+	// - Signaling to other parts of your system that startup is complete
+	// - Starting additional services that depend on these processes
+	// - Updating health check endpoints to show "ready"
+	// - Sending notifications that the system is operational
+	// The callback is executed in a separate goroutine to avoid blocking the reconciliation process.
+	OnFirstReconcileComplete func()
 }
 
 // NewProcessManager creates a new ProcessManager instance.
@@ -126,22 +141,69 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 	}
 
 	pm := &ProcessManager{
-		desiredStateProvider:   config.AppProvider,
-		actualState:            make(map[string]*ManagedProcess),
-		portManager:            config.PortManager,
-		healthChecker:          healthChecker,
-		logger:                 logger.With("component", "ProcessManager"),
-		healthCheckInterval:    hcInterval,
-		consecutiveFailures:    consFailures,
-		restartBackoffInitial:  restartInitial,
-		restartBackoffMax:      restartMax,
-		gracefulShutdownPeriod: gracefulShutdown,
-		stopChan:               make(chan struct{}),
-		subprocessWorkDir:      workDir,
-		internalSecret:         internalSecret,
+		desiredStateProvider:     config.AppProvider,
+		actualState:              make(map[string]*ManagedProcess),
+		portManager:              config.PortManager,
+		healthChecker:            healthChecker,
+		logger:                   logger.With("component", "ProcessManager"),
+		healthCheckInterval:      hcInterval,
+		consecutiveFailures:      consFailures,
+		restartBackoffInitial:    restartInitial,
+		restartBackoffMax:        restartMax,
+		gracefulShutdownPeriod:   gracefulShutdown,
+		stopChan:                 make(chan struct{}),
+		subprocessWorkDir:        workDir,
+		internalSecret:           internalSecret,
+		onFirstReconcileComplete: config.OnFirstReconcileComplete,
 	}
 
 	return pm, nil
+}
+
+// SetFirstReconcileCompleteCallback registers a callback function that will be called
+// exactly once when the first reconciliation process completes successfully with all
+// desired processes running and healthy.
+//
+// This is useful for scenarios where you need to know when all managed processes are
+// fully operational, such as:
+//   - Marking the application as "ready" for traffic
+//   - Starting dependent services
+//   - Sending startup completion notifications
+//   - Updating monitoring systems
+//
+// The callback is executed in a separate goroutine to prevent blocking the reconciliation
+// process. If the callback panics, the panic is recovered and logged as an error.
+//
+// This method is thread-safe and can be called at any time. If the first reconciliation
+// has already completed, the callback will not be called. To check if the first
+// reconciliation has completed, use IsFirstReconcileComplete().
+//
+// Parameters:
+//   - callback: The function to call when first reconciliation completes. Can be nil to clear the callback.
+func (pm *ProcessManager) SetFirstReconcileCompleteCallback(callback func()) {
+	pm.callbackMu.Lock()
+	defer pm.callbackMu.Unlock()
+
+	// Only set the callback if first reconcile hasn't completed yet
+	if !pm.firstReconcileComplete {
+		pm.onFirstReconcileComplete = callback
+	}
+}
+
+// IsFirstReconcileComplete returns true if the first reconciliation has completed
+// successfully with all desired processes running and healthy.
+//
+// A successful first reconciliation means that:
+//   - All desired processes have been started
+//   - All processes are in the StateRunning state (running and healthy)
+//   - The reconciliation process has completed at least once
+//
+// This method is thread-safe and can be called at any time to check the reconciliation status.
+// It's particularly useful for health checks or startup coordination logic.
+func (pm *ProcessManager) IsFirstReconcileComplete() bool {
+	pm.callbackMu.Lock()
+	defer pm.callbackMu.Unlock()
+	return pm.firstReconcileComplete
 }
 
 // Run starts the process manager's reconciliation and health monitoring loops.
@@ -307,6 +369,54 @@ func (pm *ProcessManager) healthMonitorLoop(ctx context.Context) {
 
 // reconcileState compares the desired application instances with the actual running processes
 // and takes actions to start missing processes or stop unwanted ones.
+func (pm *ProcessManager) checkAndFireFirstReconcileCallback() {
+	pm.callbackMu.Lock()
+	defer pm.callbackMu.Unlock()
+
+	// If we've already fired the callback, nothing to do
+	if pm.firstReconcileComplete {
+		return
+	}
+
+	// Check if all processes are running and healthy
+	desiredInstances, err := pm.desiredStateProvider.GetAppInstances(context.Background())
+	if err != nil {
+		// Can't determine desired state, so we can't say reconciliation is complete
+		return
+	}
+
+	// Check that we have all desired processes running
+	if len(pm.actualState) != len(desiredInstances) {
+		return
+	}
+
+	// Check that all processes are healthy
+	for _, instance := range desiredInstances {
+		managedProcess, exists := pm.actualState[instance.InstanceID]
+		if !exists {
+			return // Process doesn't exist
+		}
+
+		if managedProcess.State != StateRunning {
+			return // Process is not running and healthy
+		}
+	}
+
+	// All processes are running and healthy - fire the callback!
+	pm.firstReconcileComplete = true
+	if pm.onFirstReconcileComplete != nil {
+		// Fire the callback in a separate goroutine to avoid blocking
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					pm.logger.Error("First reconcile callback panicked", "error", r)
+				}
+			}()
+			pm.onFirstReconcileComplete()
+		}()
+	}
+}
+
 func (pm *ProcessManager) reconcileState(ctx context.Context) error {
 	pm.logger.Debug("Starting reconciliation cycle.")
 	desiredInstances, err := pm.desiredStateProvider.GetAppInstances(ctx)
@@ -364,6 +474,10 @@ func (pm *ProcessManager) reconcileState(ctx context.Context) error {
 		}
 	}
 	pm.logger.Debug("Reconciliation cycle finished.")
+
+	// Check if this is the first successful reconciliation and fire callback if needed
+	pm.checkAndFireFirstReconcileCallback()
+
 	return nil
 }
 
@@ -414,6 +528,7 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 		"-port", fmt.Sprintf("%d", port),
 	}
 
+	pm.logger.Info("Starting process with command line", instance.BinPath, strings.Join(cmdArgs, " "))
 	cmd := exec.CommandContext(ctx, instance.BinPath, cmdArgs...)
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("HOST=%s", instance.HostName))

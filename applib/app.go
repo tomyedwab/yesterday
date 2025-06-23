@@ -2,7 +2,6 @@ package applib
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -13,7 +12,6 @@ import (
 
 type Application struct {
 	serverVersion string
-	serverPort    int
 	db            *database.Database
 	contextVars   map[string]any
 }
@@ -24,10 +22,9 @@ var (
 	ContextSqliteDatabaseKey = "sqlite_database"
 )
 
-func NewApplication(serverVersion string, serverPort int, db *database.Database) *Application {
+func NewApplication(serverVersion string, db *database.Database) *Application {
 	return &Application{
 		serverVersion: serverVersion,
-		serverPort:    serverPort,
 		db:            db,
 		contextVars:   make(map[string]any),
 	}
@@ -38,8 +35,7 @@ func (app *Application) AddContextVar(key string, value any) {
 }
 
 func (app *Application) Serve() {
-	listenAddr := fmt.Sprintf(":%d", app.serverPort)
-	log.Printf("Starting server on %s", listenAddr)
+	log.Printf("Starting server on port 80")
 	contextFn := func(net.Listener) context.Context {
 		ctx := context.Background()
 		ctx = context.WithValue(ctx, ContextApplicationKey, app)
@@ -50,7 +46,7 @@ func (app *Application) Serve() {
 		}
 		return ctx
 	}
-	server := &http.Server{Addr: listenAddr, Handler: nil, BaseContext: contextFn}
+	server := &http.Server{Addr: "127.0.0.1:80", Handler: nil, BaseContext: contextFn}
 	log.Fatal(server.ListenAndServe())
 }
 

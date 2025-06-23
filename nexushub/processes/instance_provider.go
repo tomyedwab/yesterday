@@ -21,7 +21,6 @@ type Application struct {
 	AppID       string `json:"appId"`
 	DisplayName string `json:"displayName"`
 	HostName    string `json:"hostName"`
-	DBName      string `json:"dbName"`
 }
 
 // StaticAppConfig represents a static application configuration that overrides admin service data
@@ -30,7 +29,6 @@ type StaticAppConfig struct {
 	HostName   string
 	BinPath    string
 	StaticPath string
-	DbName     string
 	DebugPort  int
 }
 
@@ -149,7 +147,6 @@ func (p *AdminInstanceProvider) GetAppInstances(ctx context.Context) ([]AppInsta
 				HostName:   config.HostName,
 				BinPath:    config.BinPath,
 				StaticPath: config.StaticPath,
-				DbName:     config.DbName,
 				DebugPort:  config.DebugPort,
 			})
 		}
@@ -233,9 +230,8 @@ func (p *AdminInstanceProvider) convertToAppInstance(app Application) AppInstanc
 	instance := AppInstance{
 		InstanceID: app.InstanceID,
 		HostName:   app.HostName,
-		BinPath:    "dist/" + app.AppID + "/app.bin",
+		BinPath:    "dist/" + app.AppID,
 		StaticPath: "dist/" + app.AppID + "/static",
-		DbName:     "dist/" + app.AppID + "/app.db",
 		DebugPort:  0, // Default 0, will be set by static config if available
 	}
 
@@ -245,7 +241,6 @@ func (p *AdminInstanceProvider) convertToAppInstance(app Application) AppInstanc
 		instance.HostName = staticConfig.HostName
 		instance.BinPath = staticConfig.BinPath
 		instance.StaticPath = staticConfig.StaticPath
-		instance.DbName = staticConfig.DbName
 		instance.DebugPort = staticConfig.DebugPort
 		log.Printf("Applied static config override for instance %s", app.InstanceID)
 	}
@@ -262,7 +257,6 @@ func (p *AdminInstanceProvider) initializeWithStaticAppsOnly() {
 			HostName:   config.HostName,
 			BinPath:    config.BinPath,
 			StaticPath: config.StaticPath,
-			DbName:     config.DbName,
 			DebugPort:  config.DebugPort,
 		})
 	}

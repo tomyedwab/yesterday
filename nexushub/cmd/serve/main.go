@@ -32,16 +32,14 @@ func main() {
 			InstanceID: "3bf3e3c0-6e51-482a-b180-00f6aa568ee9",
 			HostName:   "login.yesterday.localhost:8443",
 			StaticPath: "dist/github.com/tomyedwab/yesterday/apps/login/static",
-			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/login/app.bin",
-			DbName:     "dist/github.com/tomyedwab/yesterday/apps/login/app.db",
+			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/login/",
 			DebugPort:  0,
 		},
 		{
 			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",
 			HostName:   "admin.yesterday.localhost:8443",
 			StaticPath: "dist/github.com/tomyedwab/yesterday/apps/admin/static",
-			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/admin/app.bin",
-			DbName:     "dist/github.com/tomyedwab/yesterday/apps/admin/app.db",
+			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/admin/",
 			DebugPort:  5173,
 		},
 	}

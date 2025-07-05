@@ -11,7 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/tomyedwab/yesterday/applib/database/events"
+	"github.com/tomyedwab/yesterday/applib/events"
 )
 
 type EventHandler[T events.Event] func(tx *sqlx.Tx, event T) (bool, error)

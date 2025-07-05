@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/tomyedwab/yesterday/applib/database/events"
+	"github.com/tomyedwab/yesterday/applib/events"
 )
 
 type User struct {

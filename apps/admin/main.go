@@ -7,7 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/applib"
 	"github.com/tomyedwab/yesterday/applib/database"
-	"github.com/tomyedwab/yesterday/applib/database/events"
+	"github.com/tomyedwab/yesterday/applib/events"
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	"github.com/tomyedwab/yesterday/apps/admin/handlers"
 	"github.com/tomyedwab/yesterday/apps/admin/state"

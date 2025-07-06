@@ -25,7 +25,7 @@ go.work.sum
 .env
 
 refresh_token.txt
-typescript/node_modules
+clients/react-ts/node_modules
 build
 dist/install
 

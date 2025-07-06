@@ -17,6 +17,7 @@ type Client struct {
 	refreshTokenPath string
 	accessToken      string
 	mu               sync.RWMutex // Protects accessToken
+	eventPoller      *EventPoller // Event polling system
 }
 
 // ClientOption represents a functional option for configuring the Client
@@ -50,6 +51,9 @@ func NewClient(baseURL string, options ...ClientOption) *Client {
 		httpClient:       &http.Client{Timeout: 30 * time.Second},
 		refreshTokenPath: defaultRefreshTokenPath,
 	}
+
+	// Initialize event poller
+	client.eventPoller = NewEventPoller(client)
 
 	// Apply options
 	for _, option := range options {
@@ -156,4 +160,9 @@ func (c *Client) Initialize(ctx context.Context) error {
 		return fmt.Errorf("failed to refresh access token during initialization: %w", err)
 	}
 	return nil
+}
+
+// GetEventPoller returns the event polling system
+func (c *Client) GetEventPoller() *EventPoller {
+	return c.eventPoller
 }

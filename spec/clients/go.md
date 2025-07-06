@@ -50,8 +50,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 
 ## Task `go-client-event-polling`: Event Number Polling System  
 **Reference:** design/clients/go.md  
-**Implementation status:** Not started  
-**Files:** `clients/go/events.go`
+**Implementation status:** Completed (2025-07-05)  
+**Files:** `clients/go/events.go`, `clients/go/events_example_test.go`
 
 **Details:**
 - Define `EventPoller` struct for managing event number polling:
@@ -73,8 +73,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 
 ## Task `go-client-data-provider`: Generic Data Provider
 **Reference:** design/clients/go.md  
-**Implementation status:** Not started  
-**Files:** `clients/go/provider.go`
+**Implementation status:** Completed (2025-01-05)  
+**Files:** `clients/go/provider.go`, `clients/go/provider_example_test.go`
 
 **Details:**
 - Define `DataProvider[T any]` generic struct for type-safe data management:

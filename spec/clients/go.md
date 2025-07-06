@@ -14,8 +14,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 
 ## Task `go-client-core-client`: Core Client Structure
 **Reference:** design/clients/go.md  
-**Implementation status:** Not started  
-**Files:** `clients/go/client.go`
+**Implementation status:** Completed (2025-07-05)  
+**Files:** `clients/go/client.go`, `clients/go/auth.go`, `clients/go/errors.go`, `clients/go/doc.go`
 
 **Details:**
 - Define `Client` struct with base configuration:
@@ -28,8 +28,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 
 ## Task `go-client-authentication`: Authentication and Session Management
 **Reference:** design/clients/go.md  
-**Implementation status:** Not started  
-**Files:** `clients/go/auth.go`
+**Implementation status:** Completed (2025-07-05)  
+**Files:** `clients/go/auth.go`, `clients/go/client.go`
 
 **Details:**
 - Implement `Login(username, password string) error` method for credential-based authentication:

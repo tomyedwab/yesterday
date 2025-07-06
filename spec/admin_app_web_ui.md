@@ -116,18 +116,21 @@ Complete user management action hooks:
 
 ### Task `web-application-actions`: Application Management Actions
 **Reference**: Application CRUD operations
-**Implementation status**: Completed (2025-06-24)
+**Implementation status**: Pending (2025-07-05)
 **Files**:
-- `apps/admin/web/src/dataviews/applicationActions.tsx`
+- `apps/admin/web/src/dataviews/applications.tsx` (to be updated)
 
 **Details**:
 Complete application management action hooks:
 - `useCreateApplication()` - Create new applications with validation
-- `useUpdateApplication()` - Update application details
-- `useDeleteApplication()` - Delete applications with protection for system apps
-- TypeScript interfaces for all action parameters
-- UUID generation for instance IDs
-- Field validation and error handling
+- `useCreateDebugApplication()` - Create debug applications with debug-specific parameters
+- `useUpdateApplication()` - Update application details with system protection
+- `useDeleteApplication()` - Delete applications with system safeguards
+- TypeScript interfaces for all action parameters including debug mode properties
+- Application-specific rule management
+- Debug token management and display
+- Static service URL configuration for debug applications
+- Error handling and validation for both regular and debug applications
 
 ### Task `web-access-rule-actions`: Access Rule Management Actions
 **Reference**: User access rule CRUD operations
@@ -167,7 +170,7 @@ Complete user management interface with:
 
 ### Task `web-applications-tab`: Application Management Interface
 **Reference**: Application management UI components
-**Implementation status**: Completed (2025-06-24)
+**Implementation status**: Pending (2025-07-05)
 **Files**:
 - `apps/admin/web/src/components/applications/ApplicationsTab.tsx`
 - `apps/admin/web/src/components/applications/ApplicationsList.tsx`
@@ -177,17 +180,41 @@ Complete user management interface with:
 
 **Details**:
 Complete application management interface with:
-- Professional table view with application details
+- Professional table view with application details including debug status indicators
 - Create application modal with App ID, display name, hostname, and database name
+- Debug mode support with optional checkbox at creation time
+- Debug applications display debug tokens in the applications list
 - Edit application modal with system application protection
-- Delete application modal with confirmation and access rule warnings
-- Field validation (App ID format, required fields)
-- UUID auto-generation for instance IDs
-- Loading states and success notifications
+- Delete application confirmation with system application safeguards
 - Integration with access rules management
+- Toast notifications for all operations
+- Loading states and error handling
 
-### Task `web-access-rules-management`: Access Rules Management Interface
-**Reference**: Access control UI components
+### Task `web-debug-application-support`: Debug Application Mode
+**Reference**: Debug application creation and management
+**Implementation status**: Completed (2025-07-05)
+**Files**:
+- `apps/admin/web/src/components/applications/CreateApplicationModal.tsx`
+- `apps/admin/web/src/components/applications/ApplicationsList.tsx`
+- `apps/admin/web/src/dataviews/applications.tsx`
+- `apps/admin/web/src/dataviews/applicationActions.tsx`
+
+**Details**:
+Debug application mode support with:
+- Optional "Debug Mode" checkbox in application creation modal with proper Chakra UI v3 implementation
+- Debug applications trigger `CreateDebugApplication` event instead of `CreateApplication`
+- Optional static service URL field for debug applications to support hot-reloading web dev servers
+- Debug publish token display in applications list for debug applications
+- Visual indicators (orange debug badge with bug icon) in applications list to distinguish debug applications
+- Extended Application type with `debugPublishToken` and `staticServiceUrl` optional fields
+- `CreateDebugApplicationRequest` interface and `useCreateDebugApplication` hook
+- URL validation for static service URL field
+- Dynamic modal title showing "Create New Debug Application" when debug mode is enabled
+- Conditional form fields and proper form reset logic for debug mode state
+- Production/Debug status indicators in applications table
+
+### Task `web-access-rules-management`: Access Rules Interface
+**Reference**: Access control management UI
 **Implementation status**: Completed (2025-06-24)
 **Files**:
 - `apps/admin/web/src/components/access-rules/UserAccessRulesList.tsx`

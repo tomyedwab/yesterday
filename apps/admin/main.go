@@ -72,6 +72,7 @@ func main() {
 
 	// Application management event handlers
 	database.AddEventHandler(db, state.CreateApplicationEventType, state.ApplicationsHandleCreateEvent)
+	database.AddEventHandler(db, state.CreateDebugApplicationEventType, state.ApplicationsHandleCreateDebugApplicationEvent)
 	database.AddEventHandler(db, state.UpdateApplicationEventType, state.ApplicationsHandleUpdateEvent)
 	database.AddEventHandler(db, state.DeleteApplicationEventType, state.ApplicationsHandleDeleteEvent)
 

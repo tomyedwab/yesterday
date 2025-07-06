@@ -15,6 +15,13 @@ export interface CreateApplicationRequest {
   hostName: string;
 }
 
+export interface CreateDebugApplicationRequest {
+  appId: string;
+  displayName: string;
+  hostName: string;
+  staticServiceUrl?: string;
+}
+
 export interface UpdateApplicationRequest {
   instanceId: string;
   appId: string;
@@ -55,6 +62,41 @@ export const useCreateApplication = () => {
   };
 
   return { createApplication, isLoading };
+};
+
+export const useCreateDebugApplication = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const connectDispatch = useConnectionDispatch();
+
+  const createDebugApplication = async (
+    request: CreateDebugApplicationRequest,
+  ): Promise<ApplicationActionResult> => {
+    setIsLoading(true);
+    try {
+      const payload: any = {
+        type: "CreateDebugApplication",
+        appId: request.appId,
+        displayName: request.displayName,
+        hostName: request.hostName,
+      };
+      
+      if (request.staticServiceUrl) {
+        payload.staticServiceUrl = request.staticServiceUrl;
+      }
+      
+      connectDispatch(CreatePendingEvent("createdebugapp:", payload));
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return { createDebugApplication, isLoading };
 };
 
 export const useUpdateApplication = () => {

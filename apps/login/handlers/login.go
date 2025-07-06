@@ -24,14 +24,10 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		// the application
 		loginSession, err = sessionManager.GetSessionByRefreshToken(refreshToken.Value)
 		if err != nil {
-			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to look up refresh token: %v", err), http.StatusInternalServerError)
-			return
+			loginSession = nil
 		}
-		if loginSession == nil {
-			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("invalid refresh token"), http.StatusUnauthorized)
-			return
-		}
-	} else {
+	}
+	if loginSession == nil {
 		// If there is no refresh token, then we expect a username and password.
 		// Make a cross-service request to the admin service to verify the
 		// credentials before creating a new login session.

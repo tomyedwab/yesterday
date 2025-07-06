@@ -5,6 +5,8 @@ export type Application = {
   appId: string;
   displayName: string;
   hostName: string;
+  debugPublishToken?: string;
+  staticServiceUrl?: string;
 };
 
 export function useApplicationsView(): [boolean, Application[]] {

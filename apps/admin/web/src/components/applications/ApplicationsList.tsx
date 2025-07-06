@@ -4,13 +4,14 @@ import {
   Text,
   Badge,
   HStack,
+  VStack,
   Spinner,
   Alert,
   Button,
   IconButton,
 } from "@chakra-ui/react";
 import { toaster } from "../ui/toaster";
-import { LuServer, LuPlus, LuPencil, LuTrash2, LuShield } from "react-icons/lu";
+import { LuServer, LuPlus, LuPencil, LuTrash2, LuShield, LuBug, LuKey } from "react-icons/lu";
 import { useState } from "react";
 import {
   useApplicationsView,
@@ -149,27 +150,7 @@ export const ApplicationsList = () => {
     );
   }
 
-  const getApplicationTypeBadge = (appId: string, displayName: string) => {
-    if (appId === "0001-0001" || displayName.toLowerCase().includes("login")) {
-      return (
-        <Badge colorScheme="blue" variant="subtle">
-          Login Service
-        </Badge>
-      );
-    }
-    if (appId === "0001-0002" || displayName.toLowerCase().includes("admin")) {
-      return (
-        <Badge colorScheme="purple" variant="subtle">
-          Admin Service
-        </Badge>
-      );
-    }
-    return (
-      <Badge colorScheme="green" variant="subtle">
-        Application
-      </Badge>
-    );
-  };
+
 
   return (
     <Box>
@@ -201,7 +182,7 @@ export const ApplicationsList = () => {
             <Table.ColumnHeader>Display Name</Table.ColumnHeader>
             <Table.ColumnHeader>App ID</Table.ColumnHeader>
             <Table.ColumnHeader>Host Name</Table.ColumnHeader>
-            <Table.ColumnHeader>Type</Table.ColumnHeader>
+            <Table.ColumnHeader>Debug Info</Table.ColumnHeader>
             <Table.ColumnHeader>Instance ID</Table.ColumnHeader>
             <Table.ColumnHeader width="160px">Actions</Table.ColumnHeader>
           </Table.Row>
@@ -210,18 +191,47 @@ export const ApplicationsList = () => {
           {applications.map((app) => (
             <Table.Row key={app.instanceId}>
               <Table.Cell>
-                <Text fontWeight="medium">{app.displayName}</Text>
+                <HStack>
+                  <Text fontWeight="medium">{app.displayName}</Text>
+                  {app.debugPublishToken && (
+                    <Badge colorPalette="orange" size="sm" variant="subtle">
+                      <LuBug size={12} />
+                      Debug
+                    </Badge>
+                  )}
+                </HStack>
               </Table.Cell>
               <Table.Cell>
-                <Text fontFamily="mono" fontSize="sm">
+                <Text fontFamily="mono" fontSize="sm" color="gray.600">
                   {app.appId}
                 </Text>
               </Table.Cell>
               <Table.Cell>
-                <Text fontSize="sm">{app.hostName}</Text>
+                <Text fontFamily="mono" fontSize="sm" color="gray.600">
+                  {app.hostName}
+                </Text>
               </Table.Cell>
               <Table.Cell>
-                {getApplicationTypeBadge(app.appId, app.displayName)}
+                <VStack align="start" gap={1}>
+                  {app.debugPublishToken && (
+                    <HStack gap={1}>
+                      <LuKey size={12} color="gray.500" />
+                      <Text fontFamily="mono" fontSize="xs" color="gray.500">
+                        Token: {app.debugPublishToken}
+                      </Text>
+                    </HStack>
+                  )}
+                  {app.debugPublishToken && app.staticServiceUrl && (
+                    <Text fontFamily="mono" fontSize="xs" color="blue.500" title="Static Service URL">
+                      → {app.staticServiceUrl}
+                    </Text>
+                  )}
+                  {!app.debugPublishToken && (
+                    <Text fontSize="xs" color="gray.400">
+                      Production
+                    </Text>
+                  )}
+                </VStack>
               </Table.Cell>
               <Table.Cell>
                 <Text fontFamily="mono" fontSize="xs" color="gray.500">

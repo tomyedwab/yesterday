@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy"
+	"github.com/tomyedwab/yesterday/nexushub/packages"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
@@ -26,24 +28,38 @@ func main() {
 
 	logger.Info("Starting NexusHub Process Manager")
 
+	packageManager := packages.NewPackageManager()
+	if !packageManager.IsInstalled("18736e4f-93f9-4606-a7be-863c7986ea5b") {
+		logger.Warn("Admin app not installed, installing...")
+		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__admin", "18736e4f-93f9-4606-a7be-863c7986ea5b"); err != nil {
+			logger.Error("Failed to install admin app", "error", err)
+			os.Exit(1)
+		}
+	}
+	if !packageManager.IsInstalled("3bf3e3c0-6e51-482a-b180-00f6aa568ee9") {
+		logger.Warn("Login app not installed, installing...")
+		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__login", "3bf3e3c0-6e51-482a-b180-00f6aa568ee9"); err != nil {
+			logger.Error("Failed to install login app", "error", err)
+			os.Exit(1)
+		}
+	}
+
+	installDir := packageManager.GetInstallDir()
+
 	// 2. Create AdminInstanceProvider with static instances for critical services
 	staticApps := []processes.StaticAppConfig{
 		{
 			InstanceID: "3bf3e3c0-6e51-482a-b180-00f6aa568ee9",
 			HostName:   "login.yesterday.localhost:8443",
-			StaticPath: "dist/github.com/tomyedwab/yesterday/apps/login/static",
-			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/login/",
-			DebugPort:  0,
+			PkgPath:    filepath.Join(installDir, "3bf3e3c0-6e51-482a-b180-00f6aa568ee9"),
 		},
 		{
 			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",
 			HostName:   "admin.yesterday.localhost:8443",
-			StaticPath: "dist/github.com/tomyedwab/yesterday/apps/admin/static",
-			BinPath:    "dist/github.com/tomyedwab/yesterday/apps/admin/",
-			DebugPort:  5173,
+			PkgPath:    filepath.Join(installDir, "18736e4f-93f9-4606-a7be-863c7986ea5b"),
 		},
 	}
-	appProvider := processes.NewAdminInstanceProvider("18736e4f-93f9-4606-a7be-863c7986ea5b", internalSecret, staticApps)
+	appProvider := processes.NewAdminInstanceProvider("18736e4f-93f9-4606-a7be-863c7986ea5b", internalSecret, installDir, staticApps)
 
 	// 3. Initialize PortManager
 	portManager, err := processes.NewPortManager(10000, 19999)

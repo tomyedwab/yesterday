@@ -260,15 +260,15 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		reverseProxy.ServeHTTP(w, r)
 		return
 
-	} else if instance.StaticPath != "" {
+	} else {
 		// Check for static file serving
 		requestedPath := r.URL.Path
 		if requestedPath == "/" {
 			requestedPath = "/index.html" // Map root to index.html
 		}
 
-		filePath := filepath.Join(instance.StaticPath, filepath.Clean(requestedPath))
-		cleanStaticPath := filepath.Clean(instance.StaticPath)
+		filePath := filepath.Join(instance.PkgPath, "app", "static", filepath.Clean(requestedPath))
+		cleanStaticPath := filepath.Clean(instance.PkgPath)
 		cleanFilePath := filepath.Clean(filePath)
 
 		if !strings.HasPrefix(cleanFilePath, cleanStaticPath) {
@@ -277,9 +277,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fileInfo, statErr := os.Stat(cleanFilePath) // Renamed err to statErr to avoid conflict
-		if statErr == nil {                         // File or directory exists at cleanFilePath
-			if !fileInfo.IsDir() { // It's a file
+		fileInfo, statErr := os.Stat(cleanFilePath)
+		if statErr == nil {
+			if !fileInfo.IsDir() {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				w.Header().Set("Access-Control-Allow-Methods", "GET")
 				w.Header().Set("Access-Control-Max-Age", "86400")

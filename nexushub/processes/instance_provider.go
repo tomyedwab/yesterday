@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -27,15 +28,14 @@ type Application struct {
 type StaticAppConfig struct {
 	InstanceID string
 	HostName   string
-	BinPath    string
-	StaticPath string
-	DebugPort  int
+	PkgPath    string
 }
 
 // AdminInstanceProvider fetches application instances from the admin service
 type AdminInstanceProvider struct {
 	adminAppID string                     // Application ID of the admin service
 	staticApps map[string]StaticAppConfig // keyed by InstanceID
+	installDir string
 
 	mu          sync.RWMutex
 	instances   []AppInstance
@@ -51,7 +51,7 @@ type AdminInstanceProvider struct {
 }
 
 // NewAdminInstanceProvider creates a new provider that fetches from the admin service
-func NewAdminInstanceProvider(adminAppID, internalSecret string, staticApps []StaticAppConfig) *AdminInstanceProvider {
+func NewAdminInstanceProvider(adminAppID, internalSecret, installDir string, staticApps []StaticAppConfig) *AdminInstanceProvider {
 	staticAppMap := make(map[string]StaticAppConfig)
 	for _, app := range staticApps {
 		staticAppMap[app.InstanceID] = app
@@ -71,6 +71,7 @@ func NewAdminInstanceProvider(adminAppID, internalSecret string, staticApps []St
 	return &AdminInstanceProvider{
 		adminAppID:   adminAppID,
 		staticApps:   staticAppMap,
+		installDir:   installDir,
 		instances:    make([]AppInstance, 0),
 		lastEventID:  0,
 		initialized:  false,
@@ -145,9 +146,7 @@ func (p *AdminInstanceProvider) GetAppInstances(ctx context.Context) ([]AppInsta
 			staticInstances = append(staticInstances, AppInstance{
 				InstanceID: config.InstanceID,
 				HostName:   config.HostName,
-				BinPath:    config.BinPath,
-				StaticPath: config.StaticPath,
-				DebugPort:  config.DebugPort,
+				PkgPath:    config.PkgPath,
 			})
 		}
 		return staticInstances, nil
@@ -230,8 +229,7 @@ func (p *AdminInstanceProvider) convertToAppInstance(app Application) AppInstanc
 	instance := AppInstance{
 		InstanceID: app.InstanceID,
 		HostName:   app.HostName,
-		BinPath:    "dist/" + app.AppID,
-		StaticPath: "dist/" + app.AppID + "/static",
+		PkgPath:    filepath.Join(p.installDir, app.AppID),
 		DebugPort:  0, // Default 0, will be set by static config if available
 	}
 
@@ -239,9 +237,7 @@ func (p *AdminInstanceProvider) convertToAppInstance(app Application) AppInstanc
 	if staticConfig, exists := p.staticApps[app.InstanceID]; exists {
 		// Static apps override all fields
 		instance.HostName = staticConfig.HostName
-		instance.BinPath = staticConfig.BinPath
-		instance.StaticPath = staticConfig.StaticPath
-		instance.DebugPort = staticConfig.DebugPort
+		instance.PkgPath = staticConfig.PkgPath
 		log.Printf("Applied static config override for instance %s", app.InstanceID)
 	}
 
@@ -255,9 +251,7 @@ func (p *AdminInstanceProvider) initializeWithStaticAppsOnly() {
 		instances = append(instances, AppInstance{
 			InstanceID: config.InstanceID,
 			HostName:   config.HostName,
-			BinPath:    config.BinPath,
-			StaticPath: config.StaticPath,
-			DebugPort:  config.DebugPort,
+			PkgPath:    config.PkgPath,
 		})
 	}
 

@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
 	printf("Mapping TCP ports %s\n", port_mapping);
 	krun_set_port_map(ctx_id, port_map);
 	printf("Executing /bin/app in VM...\n");
-	krun_set_exec(ctx_id, "/bin/app", 0, (const char* const*)&envp[0]);
+	krun_set_exec(ctx_id, "/app/bin/app", 0, (const char* const*)&envp[0]);
 	krun_start_enter(ctx_id);
 
 	return 0;

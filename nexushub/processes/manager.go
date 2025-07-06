@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -437,8 +438,8 @@ func (pm *ProcessManager) reconcileState(ctx context.Context) error {
 		actual, exists := pm.actualState[instanceID]
 		if exists && (actual.GetState() == StateRunning || actual.GetState() == StateUnhealthy || actual.GetState() == StateStarting) {
 			// Process exists and is in a running-like state, check for configuration changes
-			if actual.Instance.BinPath != desired.BinPath {
-				pm.logger.Info("Configuration changed for process, initiating restart", "instanceID", instanceID, "oldBin", actual.Instance.BinPath, "newBin", desired.BinPath)
+			if actual.Instance.PkgPath != desired.PkgPath {
+				pm.logger.Info("Configuration changed for process, initiating restart", "instanceID", instanceID, "oldPkgPath", actual.Instance.PkgPath, "newPkgPath", desired.PkgPath)
 				// Stop the process. The reconciler or exit handler will then pick it up for a restart with the new config.
 				// We run this in a goroutine to avoid blocking the reconciler loop.
 				go func(procToStop *ManagedProcess) {
@@ -524,17 +525,17 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 	pm.logger.Info("Allocated port for process", "instanceID", instance.InstanceID, "port", port)
 
 	cmdArgs := []string{
-		instance.BinPath,
+		instance.PkgPath,
 		fmt.Sprintf("%d", port),
 	}
 
-	binPath := "dist/github.com/tomyedwab/yesterday/nexushub/bin/krunclient"
+	binPath := filepath.Join(instance.PkgPath, "bin", "krunclient")
 	pm.logger.Info("Starting process with command line", binPath, strings.Join(cmdArgs, " "))
 	cmd := exec.CommandContext(ctx, binPath, cmdArgs...)
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("HOST=%s", instance.HostName))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("INTERNAL_SECRET=%s", pm.internalSecret))
-	cmd.Dir = pm.subprocessWorkDir
+	cmd.Dir = instance.PkgPath
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		pm.logger.Error("Failed to get stdout pipe", "instanceID", instance.InstanceID, "error", err)

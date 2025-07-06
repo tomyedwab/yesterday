@@ -26,4 +26,6 @@ go.work.sum
 
 refresh_token.txt
 typescript/node_modules
-dist/github.com
+build
+dist/install
+

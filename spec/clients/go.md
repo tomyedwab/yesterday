@@ -99,8 +99,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 
 ## Task `go-client-event-publisher`: Generic Event Publishing Utility
 **Reference:** design/clients/go.md  
-**Implementation status:** Not started  
-**Files:** `clients/go/publisher.go`
+**Implementation status:** Completed (2025-01-05)  
+**Files:** `clients/go/publisher.go`, `clients/go/publisher_example_test.go`
 
 **Details:**
 - Define `EventPublisher` struct for reliable event publishing:

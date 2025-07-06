@@ -318,20 +318,93 @@ provider.Close()
 - **Resource Management**: Proper cleanup with Close() method
 - **Event Integration**: Seamlessly works with the EventPoller system
 
+## Event Publishing
+
+The `EventPublisher` provides reliable event publishing with automatic queuing, retry logic, and exponential backoff.
+
+### Basic Usage
+
+```go
+// Get the event publisher (automatically created with client)
+publisher := client.GetEventPublisher()
+
+// Publish an event
+err := publisher.PublishEvent("user.created", map[string]interface{}{
+    "userId": "user123",
+    "email":  "user@example.com",
+})
+if err != nil {
+    log.Printf("Failed to publish event: %v", err)
+}
+```
+
+### Custom Configuration
+
+```go
+// Create publisher with custom settings
+publisher := NewEventPublisher(client,
+    WithRetryBackoff(2*time.Second),
+    WithMaxRetries(5),
+    WithBatchSize(10),
+)
+```
+
+### Graceful Shutdown
+
+```go
+// Wait for all events to be published
+err := publisher.FlushEvents(30 * time.Second)
+if err != nil {
+    log.Printf("Some events may not have been published: %v", err)
+}
+
+// Stop the publisher
+publisher.Stop()
+```
+
+### Event Publisher API Methods
+
+```go
+// Core methods  
+NewEventPublisher(client, options...) *EventPublisher
+publisher.PublishEvent(eventType string, payload interface{}) error
+publisher.FlushEvents(timeout time.Duration) error
+publisher.Stop()
+
+// Monitoring methods
+publisher.IsRunning() bool
+publisher.GetQueueLength() int
+
+// Configuration options
+WithRetryBackoff(backoff time.Duration) PublisherOption
+WithMaxRetries(maxRetries int) PublisherOption  
+WithBatchSize(batchSize int) PublisherOption
+```
+
+### Event Publisher Features
+
+- **Reliable Delivery**: Automatic queuing with persistent retry until success
+- **Exponential Backoff**: 1s, 2s, 4s, 8s progression up to 5 minutes maximum
+- **Thread Safety**: All operations are safe for concurrent use
+- **Graceful Shutdown**: FlushEvents() waits for pending events before shutdown
+- **Flexible Payloads**: Supports any JSON-serializable data as event payload
+- **Random Client IDs**: Each event gets a unique client ID for API tracking
+- **Error Classification**: Distinguishes between retryable and non-retryable errors
+
 ## Development Status
 
-This implementation covers the **Core Client Structure**, **Event Polling**, and **Generic Data Provider** tasks from the technical specification. Additional features like event publishing and testing utilities are planned for future releases.
+This implementation covers the **Core Client Structure**, **Event Polling**, **Generic Data Provider**, and **Event Publishing** tasks from the technical specification.
 
 ### Completed Features
 - ✅ Core client with HTTP operations and configuration
 - ✅ Authentication system with login/logout and token management
 - ✅ Event polling system with background goroutine and subscriber pattern
 - ✅ Generic data provider with type-safe automatic refresh
+- ✅ Event publishing with queuing, retry logic, and exponential backoff
 - ✅ Structured error handling with type checking
 - ✅ Thread-safe concurrent access
 
 ### Upcoming Features
-- 🔲 Event publishing with queuing and retry logic
 - 🔲 Testing utilities and mock client
 - 🔲 Advanced configuration and logging
 

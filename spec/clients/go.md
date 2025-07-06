@@ -135,8 +135,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 
 ## Task `go-client-testing-utilities`: Testing Support and Mocks
 **Reference:** design/clients/go.md  
-**Implementation status:** Not started  
-**Files:** `clients/go/testing.go`
+**Implementation status:** ✅ Completed (2025-07-05)  
+**Files:** `clients/go/testing.go`, `clients/go/testing_example_test.go`
 
 **Details:**
 - Define `MockClient` struct implementing the same interface as `Client`:

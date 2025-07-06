@@ -65,8 +65,8 @@ func ExampleEventPublisher_withOptions() {
 	// Queued event: user.deleted
 }
 
-// ExampleEventPublisher_flushEvents demonstrates waiting for all events to be published
-func ExampleEventPublisher_flushEvents() {
+// EventPublisher_flushEvents demonstrates waiting for all events to be published
+func EventPublisher_flushEvents() {
 	client := NewClient("https://api.yesterday.localhost")
 	publisher := client.GetEventPublisher()
 	
@@ -171,8 +171,8 @@ func ExampleEventPublisher_errorHandling() {
 	// Queued string payload: message.sent
 }
 
-// ExampleEventPublisher_gracefulShutdown demonstrates proper shutdown procedures
-func ExampleEventPublisher_gracefulShutdown() {
+// EventPublisher_gracefulShutdown demonstrates proper shutdown procedures
+func EventPublisher_gracefulShutdown() {
 	client := NewClient("https://api.yesterday.localhost")
 	publisher := client.GetEventPublisher()
 	

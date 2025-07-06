@@ -403,9 +403,235 @@ This implementation covers the **Core Client Structure**, **Event Polling**, **G
 - ✅ Event publishing with queuing, retry logic, and exponential backoff
 - ✅ Structured error handling with type checking
 - ✅ Thread-safe concurrent access
+- ✅ Comprehensive testing utilities with mock client and assertion helpers
+
+## Testing Utilities
+
+The Yesterday Go client includes comprehensive testing utilities to help you write robust tests for applications using the client library. The mock implementations provide controllable behavior for all client operations.
+
+### MockClient Usage
+
+```go
+import (
+    "testing"
+    yesterdaygo "github.com/tomyedwab/yesterday/clients/go"
+)
+
+func TestYourApplication(t *testing.T) {
+    // Create mock client
+    client := yesterdaygo.NewMockClient()
+    
+    // Configure mock responses
+    client.SetMockResponse("/public/login", 200, nil)
+    client.SetMockResponse("/api/users", 200, map[string]interface{}{
+        "users": []map[string]interface{}{
+            {"id": 1, "name": "Alice"},
+            {"id": 2, "name": "Bob"},
+        },
+    })
+    
+    // Test your application logic
+    err := client.Login(ctx, "testuser", "password")
+    if err != nil {
+        t.Errorf("Login failed: %v", err)
+    }
+    
+    // Verify requests were made
+    yesterdaygo.AssertAuthenticationCalled(t, client)
+    yesterdaygo.AssertRequestCount(t, client, 1)
+}
+```
+
+### MockEventPoller for Event Testing
+
+```go
+func TestEventHandling(t *testing.T) {
+    client := yesterdaygo.NewMockClient()
+    poller := client.GetMockEventPoller()
+    
+    // Start polling
+    err := poller.StartEventPolling(100 * time.Millisecond)
+    if err != nil {
+        t.Fatalf("Failed to start polling: %v", err)
+    }
+    
+    // Subscribe to events
+    eventCh := poller.SubscribeToEvents()
+    
+    // Trigger test events
+    go func() {
+        time.Sleep(10 * time.Millisecond)
+        poller.TriggerEvent(100)
+        poller.TriggerEvent(101)
+    }()
+    
+    // Verify events are received
+    select {
+    case eventNum := <-eventCh:
+        if eventNum != 100 {
+            t.Errorf("Expected event 100, got %d", eventNum)
+        }
+    case <-time.After(200 * time.Millisecond):
+        t.Error("Timeout waiting for event")
+    }
+    
+    yesterdaygo.AssertEventPollingStarted(t, poller)
+}
+```
+
+### MockEventPublisher for Publishing Tests
+
+```go
+func TestEventPublishing(t *testing.T) {
+    client := yesterdaygo.NewMockClient()
+    publisher := client.GetMockEventPublisher()
+    
+    // Publish test events
+    err := publisher.PublishEvent("user.created", map[string]string{"id": "123"})
+    if err != nil {
+        t.Fatalf("Failed to publish event: %v", err)
+    }
+    
+    // Verify events were published
+    yesterdaygo.AssertEventPublished(t, publisher, "user.created")
+    
+    // Check published events
+    events := publisher.GetPublishedEvents()
+    if len(events) != 1 {
+        t.Errorf("Expected 1 event, got %d", len(events))
+    }
+}
+```
+
+### Test Data Builders
+
+Use the built-in test data builders to create consistent mock responses:
+
+```go
+func TestWithBuilders(t *testing.T) {
+    client := yesterdaygo.NewMockClient()
+    
+    // Build login response with refresh token
+    loginResp := yesterdaygo.NewLoginResponse().
+        WithStatus(200).
+        WithRefreshToken("test-refresh-token").
+        Build()
+    
+    client.SetMockResponse("/public/login", loginResp.StatusCode, loginResp.Body)
+    client.SetMockHeaders("/public/login", loginResp.Headers)
+    
+    // Build access token response
+    tokenResp := yesterdaygo.NewAccessTokenResponse().
+        WithAccessToken("test-access-token").
+        Build()
+    
+    client.SetMockResponse("/api/access_token", tokenResp.StatusCode, tokenResp.Body)
+    
+    // Test authentication flow
+    ctx := context.Background()
+    err := client.Login(ctx, "testuser", "password")
+    if err != nil {
+        t.Errorf("Login failed: %v", err)
+    }
+}
+```
+
+### Assertion Helpers
+
+The library includes several assertion helpers for common testing scenarios:
+
+```go
+// Request verification
+yesterdaygo.AssertRequestMade(t, client, "POST", "/public/login")
+yesterdaygo.AssertRequestCount(t, client, 2)
+
+// Authentication verification
+yesterdaygo.AssertAuthenticationCalled(t, client)
+
+// Event verification
+yesterdaygo.AssertEventPollingStarted(t, poller)
+yesterdaygo.AssertEventPublished(t, publisher, "user.created")
+yesterdaygo.AssertEventPublishedWithPayload(t, publisher, "user.created", payload)
+
+// Error handling
+yesterdaygo.AssertNoErrors(t, []error{err1, err2})
+```
+
+### Integration Testing
+
+For integration tests against real API endpoints:
+
+```go
+func TestIntegration(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping integration test in short mode")
+    }
+    
+    config := yesterdaygo.NewIntegrationTestConfig()
+    config.BaseURL = "http://localhost:8080"
+    config.Username = "testuser"
+    config.Password = "testpass"
+    
+    client, err := yesterdaygo.CreateIntegrationTestClient(config)
+    if err != nil {
+        t.Fatalf("Failed to create integration test client: %v", err)
+    }
+    
+    // Test against real API
+    ctx := context.Background()
+    resp, err := client.Get(ctx, "/api/status", nil)
+    if err != nil {
+        t.Errorf("Status check failed: %v", err)
+    }
+    
+    if resp.StatusCode != 200 {
+        t.Errorf("Expected status 200, got %d", resp.StatusCode)
+    }
+}
+```
+
+### Testing Utilities API
+
+#### MockClient Methods
+```go
+// Configuration
+NewMockClient() *MockClient
+client.SetMockResponse(uri string, statusCode int, response interface{})
+client.SetMockError(uri string, err error)
+client.SetMockHeaders(uri string, headers map[string]string)
+client.SetAuthenticated(authenticated bool)
+
+// Verification
+client.GetRequestHistory() []MockRequest
+client.ClearRequestHistory()
+```
+
+#### MockEventPoller Methods
+```go
+// Control
+poller.StartEventPolling(interval time.Duration) error
+poller.StopEventPolling()
+poller.TriggerEvent(eventNumber int64)
+
+// Status
+poller.GetCurrentEventNumber() int64
+poller.IsRunning() bool
+poller.SubscribeToEvents() <-chan int64
+```
+
+#### MockEventPublisher Methods
+```go
+// Publishing
+publisher.PublishEvent(eventType string, payload interface{}) error
+publisher.FlushEvents(timeout time.Duration) error
+
+// Verification
+publisher.GetPublishedEvents() []MockPublishedEvent
+publisher.ClearPublishedEvents()
+publisher.IsRunning() bool
+```
 
 ### Upcoming Features
-- 🔲 Testing utilities and mock client
 - 🔲 Advanced configuration and logging
 
 ## License

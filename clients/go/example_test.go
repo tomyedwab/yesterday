@@ -10,7 +10,8 @@ import (
 	yesterdaygo "github.com/tomyedwab/yesterday/clients/go"
 )
 
-func ExampleClient_basic() {
+// Client_basic demonstrates basic client usage
+func Client_basic() {
 	// Create a new client
 	client := yesterdaygo.NewClient("https://api.yesterday.localhost")
 

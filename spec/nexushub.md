@@ -123,3 +123,69 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Non-blocking error handling for proxy server to prevent main thread blocking
 - Graceful degradation when components fail to stop during shutdown
 - Nil pointer checks before calling stop methods during shutdown sequence
+
+## Task `nexushub-debug-application`: Debug Application Management API
+**Reference:** design/nexusdebug.md  
+**Implementation status:** Not Started  
+**Files:** `nexushub/internal/handlers/debug.go`
+
+**Details:**
+- Implement `POST /debug/application` endpoint for creating debug applications
+- Support debug application metadata including AppID, DisplayName, and HostName generation
+- Handle debug application configuration with optional static service URL for frontend proxy
+- Implement debug application lifecycle management and cleanup
+- Validate debug application parameters and handle creation conflicts
+- Integrate with process manager for debug application deployment
+- Support debug application isolation and resource management
+- Debug applications are in "pending" state until they are installed
+
+## Task `nexushub-debug-upload`: Debug Package Upload API
+**Reference:** design/nexusdebug.md  
+**Implementation status:** Not Started  
+**Files:** `nexushub/internal/handlers/upload.go`
+
+**Details:**
+- Implement `POST /debug/application/{id}/upload` endpoint for chunked file uploads
+- Support large package file uploads with progress tracking
+- Handle upload resumption and retry logic for network resilience
+- Validate uploaded package format and integrity
+- Implement upload authentication and authorization checks
+- Support concurrent uploads with proper resource management
+- Provide upload status and progress reporting capabilities
+
+## Task `nexushub-debug-install`: Debug Application Installation API
+**Reference:** design/nexusdebug.md  
+**Implementation status:** Not Started  
+**Files:** `nexushub/internal/handlers/install.go`
+
+**Details:**
+- Implement `POST /debug/application/{id}/install` endpoint for application deployment
+- Extract and validate uploaded packages before installation
+- Once the package is installed, the debug application can be run by the process manager by adding it temporarily to the AppInstanceProvider
+- Reinstalling a package will stop the previous instance and start a new one
+- Debug packages are automatically removed if no new installs occur and no process checks its status using the `/debug/application/{id}/status` endpoint for over an hour
+
+## Task `nexushub-debug-status`: Debug Application Status API
+**Reference:** design/nexusdebug.md  
+**Implementation status:** Not Started  
+**Files:** `nexushub/internal/handlers/status.go`
+
+**Details:**
+- Implement `GET /debug/application/{id}/status` endpoint for application health monitoring
+- Provide application status including:
+  - Process state (running, stopped, failed)
+  - Health check results
+- Integrate with process manager health monitoring system
+
+## Task `nexushub-debug-logs`: Debug Application Log Streaming API
+**Reference:** design/nexusdebug.md  
+**Implementation status:** Not Started  
+**Files:** `nexushub/internal/handlers/logs.go`
+
+**Details:**
+- Implement `GET /debug/application/{id}/logs` endpoint for real-time log streaming
+- Support log tailing
+- Handle log streaming with proper connection management and reconnection
+- Support multiple concurrent log streaming clients
+- Provide structured log output with timestamps and context
+

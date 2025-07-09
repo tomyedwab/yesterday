@@ -8,11 +8,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Config holds the CLI configuration parameters
@@ -114,9 +116,24 @@ func main() {
 		log.Printf("  Static Service URL: %s", config.StaticServiceURL)
 	}
 
-	// TODO: Implement the main debug workflow
+	// Initialize authentication manager
+	authManager := NewAuthManager(config.AdminURL)
+
+	// Create context with timeout for authentication
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Perform authentication
+	log.Printf("Authentication status: %s", authManager.GetAuthenticationStatus(ctx))
+	if err := authManager.Login(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	log.Printf("Authentication status: %s", authManager.GetAuthenticationStatus(ctx))
+
+	// TODO: Implement the remaining debug workflow
 	// This will be implemented in subsequent tasks:
-	// - nexusdebug-authentication: Admin service authentication
 	// - nexusdebug-application-management: Debug application lifecycle
 	// - nexusdebug-build-system: Application build and package management
 	// - nexusdebug-file-upload: Chunked file upload implementation
@@ -125,5 +142,12 @@ func main() {
 
 	fmt.Println("NexusDebug CLI initialized successfully!")
 	fmt.Println("Press 'R' to rebuild and redeploy, 'Q' to quit")
-	fmt.Println("(Full functionality will be implemented in subsequent tasks)")
+	fmt.Println("(Authentication implemented, remaining functionality will be implemented in subsequent tasks)")
+
+	// Cleanup on exit
+	defer func() {
+		if err := authManager.Logout(context.Background()); err != nil {
+			log.Printf("Warning: logout failed: %v", err)
+		}
+	}()
 }

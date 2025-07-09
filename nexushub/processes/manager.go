@@ -535,6 +535,7 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("HOST=%s", instance.HostName))
 	cmd.Env = append(cmd.Env, fmt.Sprintf("INTERNAL_SECRET=%s", pm.internalSecret))
+	cmd.Env = append(cmd.Env, fmt.Sprintf("LD_LIBRARY_PATH=%s", filepath.Join(instance.PkgPath, "lib")))
 	cmd.Dir = instance.PkgPath
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {

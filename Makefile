@@ -22,9 +22,11 @@ build: clean
 	go build -o build/example/bin/app apps/example/main.go
 	(cd build/example && zip -r ../pkg/github_com__tomyedwab__yesterday__apps__example.zip .)
 	# Build libkrun
-	mkdir -p build/libkrun/bin
+	mkdir -p build/libkrun/bin build/libkrun/lib
 	cp -R nexushub/krunclient/rootfs/* build/libkrun/
 	gcc -o build/libkrun/bin/krunclient nexushub/krunclient/main.c -l krun
+	cp /lib/x86_64-linux-gnu/libkrun.so.1 build/libkrun/lib/
+	cp /lib/x86_64-linux-gnu/libkrunfw.so.4 build/libkrun/lib/
 	(cd build/libkrun && zip -r ../pkg/github_com__tomyedwab__yesterday__libkrun.zip .)
 	# Build nexushub executable
 	mkdir -p build/nexushub/bin

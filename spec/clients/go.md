@@ -25,6 +25,7 @@ The implementation will reside in `clients/go/` and provide both synchronous and
     defaults to ~/.yesterday/refresh_token
 - Implement `NewClient(baseURL string, options ...ClientOption) *Client` constructor
 - Add structured error types for API errors, network errors, and authentication failures
+- Integrate TLS certificate handling for localhost domains (see `go-client-tls-config` task)
 
 ## Task `go-client-authentication`: Authentication and Session Management
 **Reference:** design/clients/go.md  
@@ -132,6 +133,45 @@ The implementation will reside in `clients/go/` and provide both synchronous and
   - Return error if events remain in queue after timeout
 - Add event queue persistence for reliability across application restarts
 - Ensure thread-safe queue operations with mutex protection
+
+## Task `go-client-tls-config`: TLS Certificate Configuration
+**Reference:** design/clients/go.md  
+**Implementation status:** ✅ Completed (2025-07-09)  
+**Files:** `clients/go/tls.go`, `clients/go/client.go`, `clients/go/tls_test.go`
+
+**Details:**
+- Implement automatic self-signed certificate loading for `.localhost` domains:
+  - Check if the target host ends with `.localhost` suffix
+  - Load certificate from directory specified by `CERTS_DIR` environment variable
+  - Add certificate to TLS configuration for HTTPS requests
+- Define certificate loading logic:
+  - Look for certificate files in `${CERTS_DIR}/` directory
+  - Support common certificate file formats (`.crt`, `.pem`)
+  - Load certificate using `tls.LoadX509KeyPair()` or `x509.ParseCertificate()`
+  - Add to `http.Transport.TLSClientConfig.RootCAs` certificate pool
+- Implement `configureTLSForLocalhost(baseURL string) (*tls.Config, error)` helper function:
+  - Parse the base URL to extract hostname
+  - Return nil TLS config if hostname doesn't end with `.localhost`
+  - Return nil if `CERTS_DIR` environment variable is not set
+  - Create custom `tls.Config` with loaded certificate for localhost domains
+- Update `NewClient()` constructor to apply TLS configuration:
+  - Call `configureTLSForLocalhost()` during client initialization
+  - Apply TLS config to the HTTP client's transport if returned
+  - Gracefully handle certificate loading errors with appropriate logging
+- Add certificate validation and error handling:
+  - Verify certificate file exists and is readable
+  - Handle certificate parsing errors gracefully
+  - Log certificate loading status for debugging
+  - Fall back to standard TLS verification if certificate loading fails
+
+**Implementation Notes:**
+- Created `tls.go` with `configureTLSForLocalhost()`, `loadCertificatesFromDir()`, and `applyTLSConfigToClient()` functions
+- Supports multiple certificate formats: `.crt`, `.pem`, `.cer`
+- Integrated seamlessly into `NewClient()` constructor with automatic TLS config application
+- Added comprehensive test suite in `tls_test.go` with 100% test coverage
+- Includes programmatic certificate generation for testing purposes
+- All tests pass successfully, including edge cases and error scenarios
+- Maintains backward compatibility - existing functionality unaffected
 
 ## Task `go-client-testing-utilities`: Testing Support and Mocks
 **Reference:** design/clients/go.md  

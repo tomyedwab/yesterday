@@ -47,9 +47,22 @@ func NewClient(baseURL string, options ...ClientOption) *Client {
 	}
 	defaultRefreshTokenPath := filepath.Join(homeDir, ".yesterday", "refresh_token")
 
+	// Configure TLS for localhost domains
+	tlsConfig, err := configureTLSForLocalhost(baseURL)
+	if err != nil {
+		// Log the error but continue with default TLS settings
+		fmt.Printf("TLS configuration warning: %v\n", err)
+	}
+
+	// Create HTTP client with optional TLS configuration
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	if tlsConfig != nil {
+		applyTLSConfigToClient(httpClient, tlsConfig)
+	}
+
 	client := &Client{
 		baseURL:          baseURL,
-		httpClient:       &http.Client{Timeout: 30 * time.Second},
+		httpClient:       httpClient,
 		refreshTokenPath: defaultRefreshTokenPath,
 	}
 

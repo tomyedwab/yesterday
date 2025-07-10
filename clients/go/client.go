@@ -1,8 +1,11 @@
 package yesterdaygo
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -117,8 +120,17 @@ func (c *Client) clearAccessToken() {
 // makeRequest performs an HTTP request with authentication headers
 func (c *Client) makeRequest(ctx context.Context, method, path string, body interface{}, headers map[string]string) (*http.Response, error) {
 	url := c.baseURL + path
-	
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+
+	var bodyReader io.Reader
+	if body != nil {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -151,7 +163,7 @@ func (c *Client) Get(ctx context.Context, path string, headers map[string]string
 	return c.makeRequest(ctx, "GET", path, nil, headers)
 }
 
-// Post performs a POST request to the specified path  
+// Post performs a POST request to the specified path
 func (c *Client) Post(ctx context.Context, path string, body interface{}, headers map[string]string) (*http.Response, error) {
 	return c.makeRequest(ctx, "POST", path, body, headers)
 }

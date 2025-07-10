@@ -1,8 +1,10 @@
 package httpsproxy
 
 import (
+	"context"
 	"crypto/tls"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -16,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
+	"github.com/tomyedwab/yesterday/nexushub/internal/handlers"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
@@ -38,6 +41,7 @@ type Proxy struct {
 	server         *http.Server
 	transport      *http.Transport
 	internalSecret string
+	debugHandler   *handlers.DebugHandler
 }
 
 // NewProxy creates and returns a new Proxy instance.
@@ -53,6 +57,11 @@ func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsprox
 		Dial:                dialer.Dial,
 		TLSHandshakeTimeout: 180 * time.Second,
 	}
+	
+	// Create logger for debug handler
+	logger := slog.Default()
+	debugHandler := handlers.NewDebugHandler(pm, logger, internalSecret)
+	
 	return &Proxy{
 		listenAddr:     listenAddr,
 		certFile:       certFile,
@@ -60,6 +69,7 @@ func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsprox
 		pm:             pm,
 		transport:      transport,
 		internalSecret: internalSecret,
+		debugHandler:   debugHandler,
 	}
 }
 
@@ -106,6 +116,20 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var originalHostForLog string = r.Host // Capture original host for logging before it's modified
 
 	traceID := uuid.New().String()
+
+	// Handle debug API endpoints first
+	if strings.HasPrefix(r.URL.Path, "/debug/application") {
+		if r.URL.Path == "/debug/application" && r.Method == http.MethodPost {
+			p.debugHandler.HandleCreateApplication(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/debug/application/") && r.Method == http.MethodDelete {
+			p.debugHandler.HandleDeleteApplication(w, r)
+			return
+		}
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
 
 	// Special routing rule: /public/login always routes to the login service regardless of Host header
 	if r.URL.Path == "/public/login" || r.URL.Path == "/public/logout" {
@@ -334,5 +358,5 @@ func (p *Proxy) Stop() error {
 		return nil
 	}
 	log.Printf("Stopping HTTPS proxy server...")
-	return p.server.Shutdown(nil) // Use context.WithTimeout for graceful shutdown if needed
+	return p.server.Shutdown(context.TODO()) // Use context.WithTimeout for graceful shutdown if needed
 }

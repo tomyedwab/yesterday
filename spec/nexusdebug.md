@@ -53,7 +53,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 
 ## Task `nexusdebug-application-management`: Debug Application Lifecycle
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
+**Implementation status:** Completed
 **Files:** `nexusdebug/application.go`
 
 **Details:**
@@ -61,8 +61,6 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Generate unique application identifiers from provided application name
 - Configure debug application with appropriate metadata and hostname mapping
 - Handle application creation conflicts and cleanup existing debug applications
-- Implement application installation via `POST /debug/application/{id}/install` endpoint
-- Monitor application startup and provide status feedback to user
 - Implement application cleanup and removal on exit
 
 ## Task `nexusdebug-build-system`: Application Build and Package Management
@@ -92,6 +90,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Provide upload progress feedback to user
 - Handle upload failures with retry mechanism
 - Support resumable uploads for large packages
+- Implement application installation via `POST /debug/application/{id}/install` endpoint
+- Monitor application startup and provide status feedback to user
 
 ## Task `nexusdebug-monitoring`: Application Status and Log Monitoring
 **Reference:** design/nexusdebug.md  

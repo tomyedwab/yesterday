@@ -132,13 +132,57 @@ func main() {
 
 	log.Printf("Authentication status: %s", authManager.GetAuthenticationStatus(ctx))
 
-	// TODO: Implement the remaining debug workflow
-	// This will be implemented in subsequent tasks:
-	// - nexusdebug-application-management: Debug application lifecycle
-	// - nexusdebug-build-system: Application build and package management
-	// - nexusdebug-file-upload: Chunked file upload implementation
-	// - nexusdebug-monitoring: Application status and log monitoring
-	// - nexusdebug-interactive-control: User input and hot-reload
+	// Initialize application manager
+	appManager := NewApplicationManager(authManager.client, config.AppName, config.StaticServiceURL)
+
+	// Setup graceful shutdown handling
+	ctx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+
+	// Setup cleanup on exit
+	defer func() {
+		log.Printf("Cleaning up debug application...")
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if err := appManager.Cleanup(cleanupCtx); err != nil {
+			log.Printf("Cleanup error: %v", err)
+		}
+	}()
+
+	// Create debug application
+	log.Printf("Creating debug application...")
+	createCtx, createCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer createCancel()
+	app, err := appManager.CreateApplication(createCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create debug application: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\nDebug application created successfully!\n")
+	fmt.Printf("Application ID: %s\n", app.ID)
+	fmt.Printf("Display Name: %s\n", app.DisplayName)
+	fmt.Printf("Host Name: %s\n", app.HostName)
+	if app.StaticServiceURL != "" {
+		fmt.Printf("Static Service URL: %s\n", app.StaticServiceURL)
+	}
+
+	// Install the application
+	log.Printf("Installing debug application...")
+	installCtx, installCancel := context.WithTimeout(ctx, 120*time.Second)
+	defer installCancel()
+	if err := appManager.InstallApplication(installCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to install debug application: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✅ Debug application is now running!\n")
+	fmt.Printf("🌐 Access your application at: https://%s\n", app.HostName)
+	fmt.Printf("\n📋 Next Steps:\n")
+	fmt.Printf("  1. Upload your application package using the build/upload tasks\n")
+	fmt.Printf("  2. Use 'R' key for hot-reload after making changes\n")
+	fmt.Printf("  3. Use 'Q' key to exit gracefully\n")
+	fmt.Printf("\n🔄 Application lifecycle management completed successfully!")
 
 	fmt.Println("NexusDebug CLI initialized successfully!")
 	fmt.Println("Press 'R' to rebuild and redeploy, 'Q' to quit")

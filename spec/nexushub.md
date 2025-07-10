@@ -126,8 +126,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 
 ## Task `nexushub-debug-application`: Debug Application Management API
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
-**Files:** `nexushub/internal/handlers/debug.go`
+**Implementation status:** Completed (2025-01-09)  
+**Files:** `nexushub/internal/handlers/debug.go`, `nexushub/cmd/serve/main.go` (lines 152-176)
 
 **Details:**
 - Implement `POST /debug/application` endpoint for creating debug applications

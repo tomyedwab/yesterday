@@ -29,6 +29,8 @@ build: clean
 	cp /lib/x86_64-linux-gnu/libkrunfw.so.4 build/libkrun/lib/
 	(cd build/libkrun && zip -r ../pkg/github_com__tomyedwab__yesterday__libkrun.zip .)
 	# Build nexushub executable
+	mkdir -p build/nexusdebug/bin
+	(cd nexusdebug && go build -o ../build/nexusdebug/bin/nexusdebug cmd/main.go)
 	mkdir -p build/nexushub/bin
 	go build -o build/nexushub/bin/nexushub nexushub/cmd/serve/main.go
 

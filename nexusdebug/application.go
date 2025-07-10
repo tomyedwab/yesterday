@@ -4,7 +4,7 @@
 // configuration, installation, monitoring, and cleanup via NexusHub's debug API endpoints.
 //
 // Reference: spec/nexusdebug.md - Task nexusdebug-application-management
-package main
+package nexusdebug
 
 import (
 	"context"
@@ -62,23 +62,23 @@ func (am *ApplicationManager) generateAppIdentifiers() (appID, displayName, host
 	// Clean the app name to create valid identifiers
 	cleanName := strings.ToLower(strings.ReplaceAll(am.appName, " ", "-"))
 	cleanName = strings.ReplaceAll(cleanName, "_", "-")
-	
+
 	// Generate identifiers
 	appID = fmt.Sprintf("debug-%s", cleanName)
 	displayName = fmt.Sprintf("Debug: %s", am.appName)
 	hostName = fmt.Sprintf("%s.debug.yesterday.localhost", cleanName)
 	dbName = fmt.Sprintf("debug_%s.db", strings.ReplaceAll(cleanName, "-", "_"))
-	
+
 	return appID, displayName, hostName, dbName
 }
 
 // CreateApplication creates a new debug application via the NexusHub API
 func (am *ApplicationManager) CreateApplication(ctx context.Context) (*DebugApplication, error) {
 	log.Printf("Creating debug application for: %s", am.appName)
-	
+
 	// Generate application identifiers
 	appID, displayName, hostName, dbName := am.generateAppIdentifiers()
-	
+
 	// Prepare the request payload
 	createRequest := map[string]interface{}{
 		"appId":       appID,
@@ -86,36 +86,36 @@ func (am *ApplicationManager) CreateApplication(ctx context.Context) (*DebugAppl
 		"hostName":    hostName,
 		"dbName":      dbName,
 	}
-	
+
 	// Add static service URL if provided
 	if am.staticServiceURL != "" {
 		createRequest["staticServiceUrl"] = am.staticServiceURL
 		log.Printf("Configuring static service URL: %s", am.staticServiceURL)
 	}
-	
+
 	log.Printf("Application identifiers:")
 	log.Printf("  App ID: %s", appID)
 	log.Printf("  Display Name: %s", displayName)
 	log.Printf("  Host Name: %s", hostName)
 	log.Printf("  Database Name: %s", dbName)
-	
+
 	// Make the API request
 	response, err := am.client.Post(ctx, "/debug/application", createRequest, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create debug application: %w", err)
 	}
 	defer response.Body.Close()
-	
+
 	// Parse the response
 	var app DebugApplication
 	if err := json.NewDecoder(response.Body).Decode(&app); err != nil {
 		return nil, fmt.Errorf("failed to parse application creation response: %w", err)
 	}
-	
+
 	am.currentApp = &app
 	log.Printf("Debug application created successfully with ID: %s", app.ID)
 	log.Printf("Application status: %s", app.Status)
-	
+
 	return &app, nil
 }
 
@@ -124,21 +124,21 @@ func (am *ApplicationManager) CleanupExistingApplication(ctx context.Context) er
 	if am.currentApp == nil {
 		return nil
 	}
-	
+
 	log.Printf("Cleaning up existing debug application: %s", am.currentApp.ID)
-	
+
 	// Stop the application if it's running
 	if err := am.StopApplication(ctx); err != nil {
 		log.Printf("Warning: failed to stop application during cleanup: %v", err)
 		// Continue with cleanup even if stop fails
 	}
-	
+
 	// Delete the application
 	_, err := am.client.Delete(ctx, fmt.Sprintf("/debug/application/%s", am.currentApp.ID), nil)
 	if err != nil {
 		return fmt.Errorf("failed to delete debug application: %w", err)
 	}
-	
+
 	log.Printf("Debug application cleaned up successfully")
 	am.currentApp = nil
 	return nil
@@ -149,17 +149,17 @@ func (am *ApplicationManager) InstallApplication(ctx context.Context) error {
 	if am.currentApp == nil {
 		return fmt.Errorf("no debug application to install")
 	}
-	
+
 	log.Printf("Installing debug application: %s", am.currentApp.ID)
-	
+
 	// Make the install request
 	_, err := am.client.Post(ctx, fmt.Sprintf("/debug/application/%s/install", am.currentApp.ID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to install debug application: %w", err)
 	}
-	
+
 	log.Printf("Debug application installation initiated")
-	
+
 	// Wait for application to start and become healthy
 	return am.waitForApplicationReady(ctx)
 }
@@ -167,13 +167,13 @@ func (am *ApplicationManager) InstallApplication(ctx context.Context) error {
 // waitForApplicationReady waits for the application to become ready
 func (am *ApplicationManager) waitForApplicationReady(ctx context.Context) error {
 	log.Printf("Waiting for application to become ready...")
-	
+
 	timeout := time.NewTimer(60 * time.Second)
 	defer timeout.Stop()
-	
+
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -186,7 +186,7 @@ func (am *ApplicationManager) waitForApplicationReady(ctx context.Context) error
 				log.Printf("Error checking application status: %v", err)
 				continue
 			}
-			
+
 			log.Printf("Application status: %s", status.Status)
 			if status.HealthCheckStatus != "" {
 				log.Printf("Health check: %s", status.HealthCheckStatus)
@@ -194,7 +194,7 @@ func (am *ApplicationManager) waitForApplicationReady(ctx context.Context) error
 			if status.ErrorMessage != "" {
 				log.Printf("Error: %s", status.ErrorMessage)
 			}
-			
+
 			// Check if application is ready
 			if status.Status == "running" && status.HealthCheckStatus == "healthy" {
 				log.Printf("Application is ready!")
@@ -203,7 +203,7 @@ func (am *ApplicationManager) waitForApplicationReady(ctx context.Context) error
 				}
 				return nil
 			}
-			
+
 			// Check for failure states
 			if status.Status == "failed" || status.Status == "crashed" {
 				return fmt.Errorf("application failed to start: %s", status.ErrorMessage)
@@ -217,18 +217,18 @@ func (am *ApplicationManager) GetApplicationStatus(ctx context.Context) (*Applic
 	if am.currentApp == nil {
 		return nil, fmt.Errorf("no debug application to check status")
 	}
-	
+
 	response, err := am.client.Get(ctx, fmt.Sprintf("/debug/application/%s/status", am.currentApp.ID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get application status: %w", err)
 	}
 	defer response.Body.Close()
-	
+
 	var status ApplicationStatus
 	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
 		return nil, fmt.Errorf("failed to parse status response: %w", err)
 	}
-	
+
 	return &status, nil
 }
 
@@ -237,16 +237,16 @@ func (am *ApplicationManager) StopApplication(ctx context.Context) error {
 	if am.currentApp == nil {
 		return nil
 	}
-	
+
 	log.Printf("Stopping debug application: %s", am.currentApp.ID)
-	
+
 	_, err := am.client.Post(ctx, fmt.Sprintf("/debug/application/%s/stop", am.currentApp.ID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to stop debug application: %w", err)
 	}
-	
+
 	log.Printf("Debug application stop request sent")
-	
+
 	// Wait for application to stop
 	return am.waitForApplicationStopped(ctx)
 }
@@ -255,10 +255,10 @@ func (am *ApplicationManager) StopApplication(ctx context.Context) error {
 func (am *ApplicationManager) waitForApplicationStopped(ctx context.Context) error {
 	timeout := time.NewTimer(30 * time.Second)
 	defer timeout.Stop()
-	
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -273,7 +273,7 @@ func (am *ApplicationManager) waitForApplicationStopped(ctx context.Context) err
 				log.Printf("Application appears to be stopped (status check failed)")
 				return nil
 			}
-			
+
 			if status.Status == "stopped" || status.Status == "failed" {
 				log.Printf("Application stopped successfully")
 				return nil
@@ -292,12 +292,12 @@ func (am *ApplicationManager) IsApplicationRunning(ctx context.Context) bool {
 	if am.currentApp == nil {
 		return false
 	}
-	
+
 	status, err := am.GetApplicationStatus(ctx)
 	if err != nil {
 		return false
 	}
-	
+
 	return status.Status == "running"
 }
 
@@ -306,14 +306,14 @@ func (am *ApplicationManager) RestartApplication(ctx context.Context) error {
 	if am.currentApp == nil {
 		return fmt.Errorf("no debug application to restart")
 	}
-	
+
 	log.Printf("Restarting debug application for hot-reload...")
-	
+
 	// Stop the current instance
 	if err := am.StopApplication(ctx); err != nil {
 		log.Printf("Warning: failed to stop application during restart: %v", err)
 	}
-	
+
 	// Reinstall with new package
 	return am.InstallApplication(ctx)
 }
@@ -323,14 +323,14 @@ func (am *ApplicationManager) Cleanup(ctx context.Context) error {
 	if am.currentApp == nil {
 		return nil
 	}
-	
+
 	log.Printf("Performing final cleanup of debug application...")
-	
+
 	// Stop the application
 	if err := am.StopApplication(ctx); err != nil {
 		log.Printf("Warning: failed to stop application during cleanup: %v", err)
 	}
-	
+
 	// Remove the application
 	return am.CleanupExistingApplication(ctx)
 }

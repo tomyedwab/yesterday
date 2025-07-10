@@ -15,7 +15,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 ## Task `nexusdebug-cli-setup`: CLI Application Structure and Initialization
 **Reference:** design/nexusdebug.md  
 **Implementation status:** Completed  
-**Files:** `nexusdebug/main.go`, `nexusdebug/go.mod`
+**Files:** `nexusdebug/cmd/main.go`, `nexusdebug/go.mod`
 
 **Details:**
 - Create Go module structure for the CLI tool in `nexusdebug/` directory
@@ -32,7 +32,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 ## Task `nexusdebug-authentication`: Admin Service Authentication
 **Reference:** design/nexusdebug.md  
 **Implementation status:** Completed  
-**Files:** `nexusdebug/auth.go`, `nexusdebug/main.go`, `nexusdebug/go.mod`
+**Files:** `nexusdebug/auth.go`, `nexusdebug/cmd/main.go`, `nexusdebug/go.mod`
 
 **Details:**
 - ✅ Integrate with Go client library for authentication workflow
@@ -65,8 +65,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 
 ## Task `nexusdebug-build-system`: Application Build and Package Management
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
-**Files:** `nexusdebug/build.go`
+**Implementation status:** Completed (2025-01-09)  
+**Files:** `nexusdebug/build.go`, `nexusdebug/main.go`
 
 **Details:**
 - Execute configurable build command (default: `make build`) in application directory

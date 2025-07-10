@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/tomyedwab/yesterday/nexusdebug"
 )
 
 // Config holds the CLI configuration parameters
@@ -117,7 +119,7 @@ func main() {
 	}
 
 	// Initialize authentication manager
-	authManager := NewAuthManager(config.AdminURL)
+	authManager := nexusdebug.NewAuthManager(config.AdminURL)
 
 	// Create context with timeout for authentication
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -133,7 +135,10 @@ func main() {
 	log.Printf("Authentication status: %s", authManager.GetAuthenticationStatus(ctx))
 
 	// Initialize application manager
-	appManager := NewApplicationManager(authManager.client, config.AppName, config.StaticServiceURL)
+	appManager := nexusdebug.NewApplicationManager(authManager.Client, config.AppName, config.StaticServiceURL)
+
+	// Initialize build manager
+	buildManager := nexusdebug.NewBuildManager(config.BuildCommand, config.PackageFilename)
 
 	// Setup graceful shutdown handling
 	ctx, cancel = context.WithCancel(context.Background())
@@ -167,6 +172,23 @@ func main() {
 		fmt.Printf("Static Service URL: %s\n", app.StaticServiceURL)
 	}
 
+	// Build application package
+	log.Printf("Building application package...")
+	buildCtx, buildCancel := context.WithTimeout(ctx, 300*time.Second) // 5 minute timeout
+	defer buildCancel()
+	if err := buildManager.BuildApplication(buildCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to build application: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Display package information
+	packageSize, err := buildManager.GetPackageSize()
+	if err != nil {
+		log.Printf("Warning: could not get package size: %v", err)
+	} else {
+		fmt.Printf("📦 Package built successfully: %s (%.2f MB)\n", buildManager.GetPackagePath(), float64(packageSize)/1024/1024)
+	}
+
 	// Install the application
 	log.Printf("Installing debug application...")
 	installCtx, installCancel := context.WithTimeout(ctx, 120*time.Second)
@@ -179,10 +201,10 @@ func main() {
 	fmt.Printf("\n✅ Debug application is now running!\n")
 	fmt.Printf("🌐 Access your application at: https://%s\n", app.HostName)
 	fmt.Printf("\n📋 Next Steps:\n")
-	fmt.Printf("  1. Upload your application package using the build/upload tasks\n")
+	fmt.Printf("  1. Package is ready for upload (handled by subsequent tasks)\n")
 	fmt.Printf("  2. Use 'R' key for hot-reload after making changes\n")
 	fmt.Printf("  3. Use 'Q' key to exit gracefully\n")
-	fmt.Printf("\n🔄 Application lifecycle management completed successfully!")
+	fmt.Printf("\n🔄 Application build and deployment pipeline ready!")
 
 	fmt.Println("NexusDebug CLI initialized successfully!")
 	fmt.Println("Press 'R' to rebuild and redeploy, 'Q' to quit")

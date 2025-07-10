@@ -5,7 +5,7 @@
 // the Admin app's /public/login endpoint.
 //
 // Reference: spec/nexusdebug.md - Task nexusdebug-authentication
-package main
+package nexusdebug
 
 import (
 	"bufio"
@@ -23,15 +23,15 @@ import (
 // AuthManager handles authentication operations for the NexusDebug CLI
 type AuthManager struct {
 	adminURL string
-	client   *yesterdaygo.Client
+	Client   *yesterdaygo.Client
 }
 
 // NewAuthManager creates a new authentication manager
 func NewAuthManager(adminURL string) *AuthManager {
-	client := yesterdaygo.NewClient(adminURL)
+	Client := yesterdaygo.NewClient(adminURL)
 	return &AuthManager{
 		adminURL: adminURL,
-		client:   client,
+		Client:   Client,
 	}
 }
 
@@ -99,7 +99,7 @@ func (am *AuthManager) performLogin(ctx context.Context, username, password stri
 	log.Printf("Sending login request to %s/public/login", am.adminURL)
 
 	// Use the actual client library login method
-	if err := am.client.Login(ctx, username, password); err != nil {
+	if err := am.Client.Login(ctx, username, password); err != nil {
 		return fmt.Errorf("login request failed: %w", err)
 	}
 
@@ -108,7 +108,7 @@ func (am *AuthManager) performLogin(ctx context.Context, username, password stri
 
 // IsAuthenticated checks if the client has a valid access token
 func (am *AuthManager) IsAuthenticated(ctx context.Context) bool {
-	return am.client.IsAuthenticated()
+	return am.Client.IsAuthenticated()
 }
 
 // RefreshAccessToken refreshes the access token using the stored refresh token
@@ -116,7 +116,7 @@ func (am *AuthManager) RefreshAccessToken(ctx context.Context) error {
 	log.Printf("Refreshing access token...")
 
 	// Use the actual client library refresh method
-	if err := am.client.RefreshAccessToken(ctx); err != nil {
+	if err := am.Client.RefreshAccessToken(ctx); err != nil {
 		return fmt.Errorf("failed to refresh access token: %w", err)
 	}
 
@@ -129,7 +129,7 @@ func (am *AuthManager) Logout(ctx context.Context) error {
 	log.Printf("Logging out...")
 
 	// Use the actual client library logout method
-	if err := am.client.Logout(ctx); err != nil {
+	if err := am.Client.Logout(ctx); err != nil {
 		log.Printf("Warning: logout request failed: %v", err)
 		// Continue with cleanup even if logout request fails
 	}

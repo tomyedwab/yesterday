@@ -107,6 +107,37 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	traceID := uuid.New().String()
 
+	// Special routing rule: /public/login always routes to the login service regardless of Host header
+	if r.URL.Path == "/public/login" || r.URL.Path == "/public/logout" {
+		resolutionIdentifier = "login-service"
+		instance, port, err = p.pm.GetAppInstanceByID("3bf3e3c0-6e51-482a-b180-00f6aa568ee9")
+		if err != nil {
+			http.Error(w, "Login service not found", http.StatusNotFound)
+			log.Printf("<%s> %s%s 404 [Login service not found]", traceID, resolutionIdentifier, r.URL.Path)
+			return
+		}
+		if instance == nil {
+			http.Error(w, "Login service unavailable", http.StatusServiceUnavailable)
+			log.Printf("<%s> %s%s 503 [Login service unavailable]", traceID, resolutionIdentifier, r.URL.Path)
+			return
+		}
+
+		// Route to the login service - treat as /public/* (unauthenticated)
+		targetURL := &url.URL{
+			Scheme: "http", // Backend services are HTTP
+			Host:   "localhost:" + strconv.Itoa(port),
+		}
+
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.Transport = p.transport
+		r.Host = targetURL.Host
+		r.Header.Add("X-Trace-ID", traceID)
+
+		log.Printf("<%s> %s%s => %s [login-service]", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
+		reverseProxy.ServeHTTP(w, r)
+		return
+	}
+
 	appID := r.Header.Get("X-Application-Id")
 
 	if appID != "" {

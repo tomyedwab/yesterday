@@ -44,6 +44,7 @@ standalone application which also manages the application processes. See
 
 ## 4. Routing and Endpoint Design
 
+- `/public/login` and `/public/logout`: Special routing rule - always routes to the login service regardless of Host header. Used for centralized authentication.
 - `/api/set_token`: Sets a cookie and redirects to a provided URL. Used after login.
 - `/api/access_token`: Handles access token requests, integrating with the login service.
 - `/public/*`: Proxies to the backend without authentication.

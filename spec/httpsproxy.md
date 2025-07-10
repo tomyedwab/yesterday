@@ -76,6 +76,7 @@ Implement comprehensive request routing system with multiple backend discovery m
 1. **Application ID routing**: Use `X-Application-Id` header with `GetAppInstanceByID()`
 2. **Hostname routing**: Use `Host` header with `GetAppInstanceByHostName()`
 3. **Special endpoint handling:**
+   - `/public/login` and `/public/logout`: Always routes to the login service regardless of Host header (centralized authentication)
    - `/api/set_token`: Cookie setting and redirect functionality
    - `/api/access_token`: Access token request handling
    - `/public/*`: Unauthenticated proxying to backend

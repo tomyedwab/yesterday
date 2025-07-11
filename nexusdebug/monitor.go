@@ -70,7 +70,7 @@ func (m *Monitor) StartMonitoring(ctx context.Context) error {
 // StopMonitoring stops all monitoring activities
 func (m *Monitor) StopMonitoring() {
 	close(m.stopChan)
-	
+
 	if m.logStream != nil {
 		m.logStream.Close()
 	}
@@ -90,7 +90,7 @@ func (m *Monitor) GetStatusChannel() <-chan *ApplicationStatus {
 func (m *Monitor) startLogTailing(ctx context.Context) {
 	retryDelay := 2 * time.Second
 	maxRetryDelay := 30 * time.Second
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -102,7 +102,7 @@ func (m *Monitor) startLogTailing(ctx context.Context) {
 			if err := m.connectToLogStream(ctx); err != nil {
 				log.Printf("Failed to connect to log stream: %v", err)
 				log.Printf("Retrying in %v...", retryDelay)
-				
+
 				// Wait before retry
 				select {
 				case <-time.After(retryDelay):
@@ -118,13 +118,13 @@ func (m *Monitor) startLogTailing(ctx context.Context) {
 				}
 				continue
 			}
-			
+
 			// Reset retry delay on successful connection
 			retryDelay = 2 * time.Second
-			
+
 			// Read from log stream
 			m.readLogStream(ctx)
-			
+
 			// If we reach here, the stream was closed
 			log.Printf("Log stream closed, attempting to reconnect...")
 		}
@@ -134,18 +134,18 @@ func (m *Monitor) startLogTailing(ctx context.Context) {
 // connectToLogStream establishes a connection to the log streaming endpoint
 func (m *Monitor) connectToLogStream(ctx context.Context) error {
 	endpoint := fmt.Sprintf("/debug/application/%s/logs", m.app.ID)
-	
+
 	// Create streaming request
 	response, err := m.client.Get(ctx, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to connect to log stream: %w", err)
 	}
-	
+
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()
 		return fmt.Errorf("log stream returned status %d", response.StatusCode)
 	}
-	
+
 	m.logStream = response.Body
 	log.Printf("Connected to log stream for application: %s", m.app.ID)
 	return nil
@@ -156,14 +156,14 @@ func (m *Monitor) readLogStream(ctx context.Context) {
 	if m.logStream == nil {
 		return
 	}
-	
+
 	defer func() {
 		m.logStream.Close()
 		m.logStream = nil
 	}()
-	
+
 	scanner := bufio.NewScanner(m.logStream)
-	
+
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -175,31 +175,42 @@ func (m *Monitor) readLogStream(ctx context.Context) {
 			if line == "" {
 				continue
 			}
-			
-			// Try to parse as JSON log entry
-			var logEntry LogEntry
-			if err := json.Unmarshal([]byte(line), &logEntry); err != nil {
-				// If not JSON, treat as plain text log
-				logEntry = LogEntry{
-					Timestamp: time.Now().Format(time.RFC3339),
-					Level:     "info",
-					Message:   line,
-				}
+
+			// Handle Server-Sent Events format
+			if strings.HasPrefix(line, "event: ") {
+				// Skip event type lines
+				continue
 			}
-			
-			// Send log entry to channel
-			select {
-			case m.logChan <- &logEntry:
-			case <-ctx.Done():
-				return
-			case <-m.stopChan:
-				return
-			default:
-				// Drop log entry if channel is full
+
+			if strings.HasPrefix(line, "data: ") {
+				// Extract JSON data from SSE format
+				jsonData := strings.TrimPrefix(line, "data: ")
+
+				// Try to parse as JSON log entry
+				var logEntry LogEntry
+				if err := json.Unmarshal([]byte(jsonData), &logEntry); err != nil {
+					// If not JSON, treat as plain text log
+					logEntry = LogEntry{
+						Timestamp: time.Now().Format(time.RFC3339),
+						Level:     "info",
+						Message:   jsonData,
+					}
+				}
+
+				// Send log entry to channel
+				select {
+				case m.logChan <- &logEntry:
+				case <-ctx.Done():
+					return
+				case <-m.stopChan:
+					return
+				default:
+					// Drop log entry if channel is full
+				}
 			}
 		}
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		log.Printf("Error reading log stream: %v", err)
 	}
@@ -209,7 +220,7 @@ func (m *Monitor) readLogStream(ctx context.Context) {
 func (m *Monitor) startStatusMonitoring(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -222,7 +233,7 @@ func (m *Monitor) startStatusMonitoring(ctx context.Context) {
 				log.Printf("Error getting application status: %v", err)
 				continue
 			}
-			
+
 			// Send status update to channel
 			select {
 			case m.statusChan <- status:
@@ -240,18 +251,18 @@ func (m *Monitor) startStatusMonitoring(ctx context.Context) {
 // getApplicationStatus retrieves the current status of the debug application
 func (m *Monitor) getApplicationStatus(ctx context.Context) (*ApplicationStatus, error) {
 	endpoint := fmt.Sprintf("/debug/application/%s/status", m.app.ID)
-	
+
 	response, err := m.client.Get(ctx, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get application status: %w", err)
 	}
 	defer response.Body.Close()
-	
+
 	var status ApplicationStatus
 	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
 		return nil, fmt.Errorf("failed to parse status response: %w", err)
 	}
-	
+
 	return &status, nil
 }
 
@@ -262,36 +273,26 @@ func FormatLogEntry(entry *LogEntry) string {
 	if t, err := time.Parse(time.RFC3339, entry.Timestamp); err == nil {
 		timestamp = t.Format("15:04:05")
 	}
-	
+
 	// Format level with color coding
 	level := formatLogLevel(entry.Level)
-	
-	// Include source if available
-	source := ""
-	if entry.Source != "" {
-		source = fmt.Sprintf("[%s] ", entry.Source)
-	}
-	
-	// Include process ID if available
-	processInfo := ""
-	if entry.ProcessID > 0 {
-		processInfo = fmt.Sprintf("(PID %d) ", entry.ProcessID)
-	}
-	
-	return fmt.Sprintf("%s %s %s%s%s", timestamp, level, source, processInfo, entry.Message)
+
+	// For log entries with existing timestamp and level, just show the message
+	// Otherwise show formatted timestamp and level
+	return fmt.Sprintf("%s %s %s", timestamp, level, entry.Message)
 }
 
 // formatLogLevel applies color coding to log levels
 func formatLogLevel(level string) string {
 	switch strings.ToLower(level) {
 	case "error":
-		return "🔴 ERROR"
+		return "🔴 ERROR "
 	case "warn", "warning":
-		return "🟡 WARN "
+		return "🟡 WARN  "
 	case "info":
-		return "🔵 INFO "
+		return "🔵 INFO  "
 	case "debug":
-		return "🟢 DEBUG"
+		return "🟢 DEBUG "
 	default:
 		return fmt.Sprintf("     %s", strings.ToUpper(level))
 	}
@@ -300,33 +301,33 @@ func formatLogLevel(level string) string {
 // FormatStatusUpdate formats an application status update for display
 func FormatStatusUpdate(status *ApplicationStatus) string {
 	statusIcon := getStatusIcon(status.Status)
-	
+
 	var parts []string
-	parts = append(parts, fmt.Sprintf("%s Status: %s", statusIcon, status.Status))
-	
+	parts = append(parts, fmt.Sprintf("%s STATUS %s", statusIcon, status.Status))
+
 	if status.ProcessID > 0 {
 		parts = append(parts, fmt.Sprintf("PID: %d", status.ProcessID))
 	}
-	
+
 	if status.Port > 0 {
 		parts = append(parts, fmt.Sprintf("Port: %d", status.Port))
 	}
-	
+
 	if status.HealthCheck != "" {
 		healthIcon := getHealthIcon(status.HealthCheck)
 		parts = append(parts, fmt.Sprintf("Health: %s %s", healthIcon, status.HealthCheck))
 	}
-	
+
 	if status.Error != "" {
 		parts = append(parts, fmt.Sprintf("Error: %s", status.Error))
 	}
-	
+
 	timestamp := status.LastUpdated
 	if t, err := time.Parse(time.RFC3339, status.LastUpdated); err == nil {
 		timestamp = t.Format("15:04:05")
 	}
-	
-	return fmt.Sprintf("[%s] %s", timestamp, strings.Join(parts, " | "))
+
+	return fmt.Sprintf("%s %s", timestamp, strings.Join(parts, " | "))
 }
 
 // getStatusIcon returns an appropriate icon for the application status

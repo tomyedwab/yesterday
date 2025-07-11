@@ -141,17 +141,20 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 
 ## Task `nexushub-debug-upload`: Debug Package Upload API
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
+**Implementation status:** Completed (2025-07-10)  
 **Files:** `nexushub/internal/handlers/upload.go`
 
 **Details:**
-- Implement `POST /debug/application/{id}/upload` endpoint for chunked file uploads
-- Support large package file uploads with progress tracking
-- Handle upload resumption and retry logic for network resilience
-- Validate uploaded package format and integrity
-- Implement upload authentication and authorization checks
-- Support concurrent uploads with proper resource management
-- Provide upload status and progress reporting capabilities
+- ✅ Implemented `POST /debug/application/{id}/upload` endpoint for chunked file uploads
+- ✅ Support large package file uploads with progress tracking
+- ✅ Handle upload resumption and retry logic for network resilience
+- ✅ Validate uploaded package format and integrity with MD5 hash verification
+- ✅ Implement upload authentication and authorization checks
+- ✅ Support concurrent uploads with proper resource management
+- ✅ Provide upload status and progress reporting capabilities
+- ✅ Integrated with HTTPS proxy routing and debug application lifecycle
+- ✅ Thread-safe upload session management with mutex protection
+- ✅ Automatic file assembly and temporary storage management
 
 ## Task `nexushub-debug-install`: Debug Application Installation API
 **Reference:** design/nexusdebug.md  

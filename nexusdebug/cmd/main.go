@@ -189,22 +189,37 @@ func main() {
 		fmt.Printf("📦 Package built successfully: %s (%.2f MB)\n", buildManager.GetPackagePath(), float64(packageSize)/1024/1024)
 	}
 
-	// Install the application
-	log.Printf("Installing debug application...")
-	installCtx, installCancel := context.WithTimeout(ctx, 120*time.Second)
-	defer installCancel()
-	if err := appManager.InstallApplication(installCtx); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to install debug application: %v\n", err)
+	// Initialize upload manager
+	uploadManager := nexusdebug.NewUploadManager(authManager.Client)
+	uploadManager.SetApplication(app)
+
+	// Upload and install the application package
+	log.Printf("Uploading and installing debug application...")
+	uploadCtx, uploadCancel := context.WithTimeout(ctx, 600*time.Second) // 10 minute timeout for upload+install
+	defer uploadCancel()
+	
+	// Upload with progress reporting
+	if err := uploadManager.UploadAndInstall(uploadCtx, buildManager.GetPackagePath(), nexusdebug.PrintUploadProgress); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to upload and install debug application: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Wait for application to be ready
+	log.Printf("Waiting for application to start...")
+	readyCtx, readyCancel := context.WithTimeout(ctx, 120*time.Second)
+	defer readyCancel()
+	if err := appManager.InstallApplication(readyCtx); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to verify application startup: %v\n", err)
 		os.Exit(1)
 	}
 
 	fmt.Printf("\n✅ Debug application is now running!\n")
 	fmt.Printf("🌐 Access your application at: https://%s\n", app.HostName)
 	fmt.Printf("\n📋 Next Steps:\n")
-	fmt.Printf("  1. Package is ready for upload (handled by subsequent tasks)\n")
+	fmt.Printf("  1. Package uploaded and installed successfully\n")
 	fmt.Printf("  2. Use 'R' key for hot-reload after making changes\n")
 	fmt.Printf("  3. Use 'Q' key to exit gracefully\n")
-	fmt.Printf("\n🔄 Application build and deployment pipeline ready!")
+	fmt.Printf("\n🔄 Application build, upload, and deployment pipeline ready!")
 
 	fmt.Println("NexusDebug CLI initialized successfully!")
 	fmt.Println("Press 'R' to rebuild and redeploy, 'Q' to quit")

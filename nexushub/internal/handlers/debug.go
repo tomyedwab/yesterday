@@ -9,9 +9,14 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,23 +42,181 @@ type DebugApplication struct {
 	StaticServiceURL string `json:"staticServiceUrl,omitempty"`
 	Status           string `json:"status"`
 	CreatedAt        string `json:"createdAt"`
+	PackagePath      string `json:"-"` // Path to uploaded package (not exposed via JSON)
+}
+
+// UploadChunk represents a single chunk of an uploaded file
+type UploadChunk struct {
+	ChunkIndex int    `json:"chunkIndex"`
+	Data       []byte `json:"-"`
+	Received   bool   `json:"received"`
+}
+
+// UploadSession represents an ongoing upload session
+type UploadSession struct {
+	ApplicationID string                  `json:"applicationId"`
+	TotalChunks   int                    `json:"totalChunks"`
+	Chunks        map[int]*UploadChunk   `json:"chunks"`
+	FileHash      string                 `json:"fileHash"`
+	Completed     bool                   `json:"completed"`
+	CreatedAt     time.Time              `json:"createdAt"`
+	mu            sync.RWMutex           `json:"-"`
+}
+
+// UploadStatus represents the status of an upload session
+type UploadStatus struct {
+	ApplicationID   string  `json:"applicationId"`
+	TotalChunks     int     `json:"totalChunks"`
+	ReceivedChunks  int     `json:"receivedChunks"`
+	Progress        float64 `json:"progress"`
+	Completed       bool    `json:"completed"`
+	FileHash        string  `json:"fileHash,omitempty"`
+	Error           string  `json:"error,omitempty"`
 }
 
 // DebugHandler handles debug application lifecycle management
 type DebugHandler struct {
-	processManager httpsproxy_types.ProcessManagerInterface
-	logger         *slog.Logger
-	debugApps      map[string]*DebugApplication // In-memory storage for debug apps
-	internalSecret string
+	processManager   httpsproxy_types.ProcessManagerInterface
+	logger           *slog.Logger
+	debugApps        map[string]*DebugApplication // In-memory storage for debug apps
+	uploadSessions   map[string]*UploadSession    // In-memory storage for upload sessions
+	uploadDir        string                       // Directory for storing uploaded packages
+	internalSecret   string
+	mu               sync.RWMutex                 // Protects debugApps and uploadSessions
 }
 
 // NewDebugHandler creates a new debug handler instance
 func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, logger *slog.Logger, internalSecret string) *DebugHandler {
+	// Create upload directory
+	uploadDir := filepath.Join(os.TempDir(), "nexushub-debug-uploads")
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		logger.Warn("Failed to create upload directory", "dir", uploadDir, "error", err)
+		uploadDir = os.TempDir() // Fallback to temp dir
+	}
+
 	return &DebugHandler{
-		processManager: processManager,
-		logger:         logger,
-		debugApps:      make(map[string]*DebugApplication),
-		internalSecret: internalSecret,
+		processManager:   processManager,
+		logger:           logger,
+		debugApps:        make(map[string]*DebugApplication),
+		uploadSessions:   make(map[string]*UploadSession),
+		uploadDir:        uploadDir,
+		internalSecret:   internalSecret,
+	}
+}
+
+// HandleUpload handles POST /debug/application/{id}/upload for chunked file uploads
+func (h *DebugHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract application ID from URL path: /debug/application/{id}/upload
+	path := strings.TrimPrefix(r.URL.Path, "/debug/application/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || parts[1] != "upload" {
+		http.Error(w, "Invalid upload URL format", http.StatusBadRequest)
+		return
+	}
+	appID := parts[0]
+
+	if appID == "" {
+		http.Error(w, "Missing application ID", http.StatusBadRequest)
+		return
+	}
+
+	// Check if debug application exists
+	h.mu.RLock()
+	debugApp, exists := h.debugApps[appID]
+	h.mu.RUnlock()
+
+	if !exists {
+		h.logger.Error("Debug application not found for upload", "id", appID)
+		http.Error(w, "Debug application not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse multipart form
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		h.logger.Error("Failed to parse multipart form", "error", err)
+		http.Error(w, "Failed to parse upload form", http.StatusBadRequest)
+		return
+	}
+
+	// Extract chunk metadata
+	chunkIndexStr := r.FormValue("chunkIndex")
+	totalChunksStr := r.FormValue("totalChunks")
+	fileHash := r.FormValue("fileHash")
+
+	if chunkIndexStr == "" || totalChunksStr == "" || fileHash == "" {
+		h.logger.Error("Missing required upload parameters", 
+			"chunkIndex", chunkIndexStr, "totalChunks", totalChunksStr, "fileHash", fileHash)
+		http.Error(w, "Missing required parameters: chunkIndex, totalChunks, fileHash", http.StatusBadRequest)
+		return
+	}
+
+	chunkIndex, err := strconv.Atoi(chunkIndexStr)
+	if err != nil {
+		h.logger.Error("Invalid chunk index", "chunkIndex", chunkIndexStr, "error", err)
+		http.Error(w, "Invalid chunk index", http.StatusBadRequest)
+		return
+	}
+
+	totalChunks, err := strconv.Atoi(totalChunksStr)
+	if err != nil {
+		h.logger.Error("Invalid total chunks", "totalChunks", totalChunksStr, "error", err)
+		http.Error(w, "Invalid total chunks", http.StatusBadRequest)
+		return
+	}
+
+	// Get file from form
+	file, _, err := r.FormFile("chunk")
+	if err != nil {
+		h.logger.Error("Failed to get chunk file from form", "error", err)
+		http.Error(w, "Failed to get chunk file", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Read chunk data
+	chunkData, err := io.ReadAll(file)
+	if err != nil {
+		h.logger.Error("Failed to read chunk data", "error", err)
+		http.Error(w, "Failed to read chunk data", http.StatusInternalServerError)
+		return
+	}
+
+	h.logger.Info("Received chunk upload", 
+		"appId", appID, "chunkIndex", chunkIndex, "totalChunks", totalChunks, 
+		"chunkSize", len(chunkData), "fileHash", fileHash)
+
+	// Process the chunk
+	if err := h.processUploadChunk(appID, chunkIndex, totalChunks, fileHash, chunkData); err != nil {
+		h.logger.Error("Failed to process upload chunk", "error", err)
+		http.Error(w, "Failed to process chunk", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if upload is complete
+	h.mu.RLock()
+	uploadSession, exists := h.uploadSessions[appID]
+	h.mu.RUnlock()
+
+	if exists && uploadSession.Completed {
+		h.logger.Info("Upload completed", "appId", appID, "packagePath", debugApp.PackagePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "completed",
+			"message": "Package upload completed successfully",
+		})
+	} else {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "received",
+			"message": "Chunk received successfully",
+		})
 	}
 }
 
@@ -102,7 +265,9 @@ func (h *DebugHandler) HandleCreateApplication(w http.ResponseWriter, r *http.Re
 	}
 
 	// Store in memory (in production, this would be stored in a database)
+	h.mu.Lock()
 	h.debugApps[appID] = debugApp
+	h.mu.Unlock()
 
 	h.logger.Info("Debug application created", 
 		"id", appID, 

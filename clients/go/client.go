@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -176,6 +177,61 @@ func (c *Client) Put(ctx context.Context, path string, body interface{}, headers
 // Delete performs a DELETE request to the specified path
 func (c *Client) Delete(ctx context.Context, path string, headers map[string]string) (*http.Response, error) {
 	return c.makeRequest(ctx, "DELETE", path, nil, headers)
+}
+
+// PostMultipart performs a POST request with multipart form data
+func (c *Client) PostMultipart(ctx context.Context, path string, fields map[string]string, files map[string][]byte, headers map[string]string) (*http.Response, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// Add form fields
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+		}
+	}
+
+	// Add file fields
+	for key, data := range files {
+		part, err := writer.CreateFormFile(key, key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create form file %s: %w", key, err)
+		}
+		if _, err := part.Write(data); err != nil {
+			return nil, fmt.Errorf("failed to write file data for %s: %w", key, err)
+		}
+	}
+
+	writer.Close()
+
+	// Create request
+	url := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authentication header if we have an access token
+	if token := c.getAccessToken(); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	// Set multipart content type
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Add custom headers (but don't override Content-Type)
+	for key, value := range headers {
+		if key != "Content-Type" {
+			req.Header.Set(key, value)
+		}
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	return resp, nil
 }
 
 // Initialize performs initial setup including token refresh

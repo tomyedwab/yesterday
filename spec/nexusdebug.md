@@ -66,7 +66,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 ## Task `nexusdebug-build-system`: Application Build and Package Management
 **Reference:** design/nexusdebug.md  
 **Implementation status:** Completed (2025-01-09)  
-**Files:** `nexusdebug/build.go`, `nexusdebug/main.go`
+**Files:** `nexusdebug/build.go`, `nexusdebug/cmd/main.go`
 
 **Details:**
 - Execute configurable build command (default: `make build`) in application directory
@@ -79,7 +79,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 
 ## Task `nexusdebug-file-upload`: Chunked File Upload Implementation
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
+**Implementation status:** Completed (2025-01-09)  
 **Files:** `nexusdebug/upload.go`
 
 **Details:**

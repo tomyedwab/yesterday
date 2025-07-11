@@ -127,6 +127,17 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			p.debugHandler.HandleDeleteApplication(w, r)
 			return
 		}
+		// Handle upload endpoints
+		if strings.Contains(r.URL.Path, "/upload") {
+			if strings.HasSuffix(r.URL.Path, "/upload") && r.Method == http.MethodPost {
+				p.debugHandler.HandleUpload(w, r)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/upload/status") && r.Method == http.MethodGet {
+				p.debugHandler.HandleUploadStatus(w, r)
+				return
+			}
+		}
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}

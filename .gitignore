@@ -28,4 +28,5 @@ refresh_token.txt
 clients/react-ts/node_modules
 build
 dist/install
+apps/example/dist
 

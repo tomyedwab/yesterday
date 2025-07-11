@@ -226,13 +226,7 @@ func (h *DebugHandler) HandleApplicationStatus(w http.ResponseWriter, r *http.Re
 			status.ProcessID = 0           // ProcessID not available from this interface
 		} else {
 			// Application should be running but not found in process manager
-			status.Status = "stopped"
-			status.Error = "Application not found in process manager"
-
-			// Update stored status
-			h.mu.Lock()
-			debugApp.Status = "stopped"
-			h.mu.Unlock()
+			status.Status = "pending"
 		}
 	}
 

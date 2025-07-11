@@ -221,9 +221,35 @@ func main() {
 	fmt.Printf("  3. Use 'Q' key to exit gracefully\n")
 	fmt.Printf("\n🔄 Application build, upload, and deployment pipeline ready!")
 
-	fmt.Println("NexusDebug CLI initialized successfully!")
+	// Initialize monitoring
+	monitor := nexusdebug.NewMonitor(authManager.Client, app)
+	
+	// Start monitoring in the background
+	monitorCtx, monitorCancel := context.WithCancel(ctx)
+	defer monitorCancel()
+	
+	if err := monitor.StartMonitoring(monitorCtx); err != nil {
+		log.Printf("Warning: failed to start monitoring: %v", err)
+	} else {
+		fmt.Printf("\n📊 Monitoring started - displaying logs and status updates:\n")
+		fmt.Printf("───────────────────────────────────────────────────────────────\n")
+		
+		// Start displaying logs in a separate goroutine
+		go monitor.DisplayLogs(monitorCtx)
+	}
+
+	fmt.Println("\nNexusDebug CLI initialized successfully!")
 	fmt.Println("Press 'R' to rebuild and redeploy, 'Q' to quit")
-	fmt.Println("(Authentication implemented, remaining functionality will be implemented in subsequent tasks)")
+	fmt.Println("(Interactive controls will be implemented in subsequent tasks)")
+
+	// Keep the application running and monitoring
+	select {
+	case <-ctx.Done():
+		fmt.Println("\nShutting down...")
+	}
+
+	// Stop monitoring
+	monitor.StopMonitoring()
 
 	// Cleanup on exit
 	defer func() {

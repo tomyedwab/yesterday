@@ -34,7 +34,7 @@ build: clean
 	mkdir -p build/nexushub/bin
 	go build -o build/nexushub/bin/nexushub nexushub/cmd/serve/main.go
 
-serve:
+serve: PHONY
 	mkdir -p dist/install
 	if command -v hl >/dev/null 2>&1; then \
 		PKG_DIR=$(PWD)/build/pkg INSTALL_DIR=$(PWD)/dist/install ./build/nexushub/bin/nexushub | hl -F -h component -h pid; \

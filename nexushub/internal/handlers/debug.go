@@ -7,6 +7,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,9 +81,10 @@ type DebugHandler struct {
 	logger           *slog.Logger
 	debugApps        map[string]*DebugApplication // In-memory storage for debug apps
 	uploadSessions   map[string]*UploadSession    // In-memory storage for upload sessions
+	cleanupCancels   map[string]context.CancelFunc // Cleanup timer cancellation functions
 	uploadDir        string                       // Directory for storing uploaded packages
 	internalSecret   string
-	mu               sync.RWMutex                 // Protects debugApps and uploadSessions
+	mu               sync.RWMutex                 // Protects debugApps, uploadSessions, and cleanupCancels
 }
 
 // NewDebugHandler creates a new debug handler instance
@@ -99,6 +101,7 @@ func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, lo
 		logger:           logger,
 		debugApps:        make(map[string]*DebugApplication),
 		uploadSessions:   make(map[string]*UploadSession),
+		cleanupCancels:   make(map[string]context.CancelFunc),
 		uploadDir:        uploadDir,
 		internalSecret:   internalSecret,
 	}
@@ -315,8 +318,15 @@ func (h *DebugHandler) HandleDeleteApplication(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	// Cancel any pending cleanup timer
+	if cancel, exists := h.cleanupCancels[appID]; exists {
+		cancel()
+		delete(h.cleanupCancels, appID)
+	}
+
 	// Remove from storage
 	delete(h.debugApps, appID)
+	delete(h.uploadSessions, appID)
 
 	h.logger.Info("Debug application deleted", "id", appID, "appId", debugApp.AppID)
 
@@ -336,8 +346,15 @@ func (h *DebugHandler) cleanupExistingApplication(appID string) error {
 				}
 			}
 			
+			// Cancel any pending cleanup timer
+			if cancel, exists := h.cleanupCancels[id]; exists {
+				cancel()
+				delete(h.cleanupCancels, id)
+			}
+			
 			// Remove from storage
 			delete(h.debugApps, id)
+			delete(h.uploadSessions, id)
 		}
 	}
 	return nil

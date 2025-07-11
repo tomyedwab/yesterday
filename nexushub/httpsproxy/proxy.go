@@ -138,6 +138,16 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// Handle install endpoint
+		if strings.HasSuffix(r.URL.Path, "/install") && r.Method == http.MethodPost {
+			p.debugHandler.HandleInstallApplication(w, r)
+			return
+		}
+		// Handle status endpoint
+		if strings.HasSuffix(r.URL.Path, "/status") && r.Method == http.MethodGet {
+			p.debugHandler.HandleApplicationStatus(w, r)
+			return
+		}
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}

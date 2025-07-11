@@ -85,7 +85,8 @@ type DebugHandler struct {
 	cleanupCancels   map[string]context.CancelFunc // Cleanup timer cancellation functions
 	uploadDir        string                        // Directory for storing uploaded packages
 	internalSecret   string
-	mu               sync.RWMutex // Protects debugApps, uploadSessions, and cleanupCancels
+	logStreamer      *LogStreamer                  // Log streaming manager
+	mu               sync.RWMutex                  // Protects debugApps, uploadSessions, and cleanupCancels
 }
 
 // NewDebugHandler creates a new debug handler instance

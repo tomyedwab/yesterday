@@ -8,6 +8,12 @@ import "github.com/tomyedwab/yesterday/nexushub/processes"
 type ProcessManagerInterface interface {
 	GetAppInstanceByHostName(hostname string) (*processes.AppInstance, int, error)
 	GetAppInstanceByID(id string) (*processes.AppInstance, int, error) // Added for AppID lookup
+	
+	// Log streaming methods for debug applications
+	GetProcessLogs(instanceID string, fromID int64) ([]processes.ProcessLogEntry, error)
+	GetLatestProcessLogs(instanceID string, count int) ([]processes.ProcessLogEntry, error)
+	GetProcessLogLatestID(instanceID string) (int64, error)
+	AddLogCallback(callback processes.LogCallback)
 }
 
 // AppInstanceProvider defines the methods the DebugHandler needs

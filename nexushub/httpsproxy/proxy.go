@@ -143,6 +143,11 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			p.debugHandler.HandleApplicationStatus(w, r)
 			return
 		}
+		// Handle logs endpoint
+		if strings.HasSuffix(r.URL.Path, "/logs") && r.Method == http.MethodGet {
+			p.debugHandler.HandleLogStream(w, r)
+			return
+		}
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}

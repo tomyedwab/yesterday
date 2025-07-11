@@ -29,6 +29,9 @@ type AppInstanceProvider interface {
 	GetAppInstances(ctx context.Context) ([]AppInstance, error)
 }
 
+// LogCallback is a function type for handling new log entries
+type LogCallback func(instanceID string, logEntry ProcessLogEntry)
+
 // ProcessManager orchestrates the lifecycle of multiple servicehost subprocesses.
 // It ensures that the actual running processes match a desired state, monitors their health,
 // and handles restarts or recovery actions.	type ProcessManager struct {
@@ -62,6 +65,10 @@ type ProcessManager struct {
 	onFirstReconcileComplete func()     // Callback function to fire on first successful reconcile
 	firstReconcileComplete   bool       // Flag to track if first reconcile has completed
 	callbackMu               sync.Mutex // Protects callback-related fields
+
+	// Log handling
+	logCallbacks []LogCallback // Callbacks to notify when new log entries are added
+	logMu        sync.RWMutex  // Protects log-related fields
 }
 
 // Config holds configuration options for the ProcessManager.
@@ -284,6 +291,76 @@ func (pm *ProcessManager) GetAppInstanceByID(id string) (*AppInstance, int, erro
 
 	pm.logger.Warn("Found instance by ID but it's not running", "instanceID", id, "state", process.GetState().String())
 	return nil, 0, fmt.Errorf("instance with ID '%s' found but not in a running state (current state: %s)", id, process.GetState().String())
+}
+
+// AddLogCallback adds a callback to be called when new log entries are added to any managed process
+func (pm *ProcessManager) AddLogCallback(callback LogCallback) {
+	pm.logMu.Lock()
+	defer pm.logMu.Unlock()
+	pm.logCallbacks = append(pm.logCallbacks, callback)
+}
+
+// GetProcessLogs returns log entries for a specific process, starting from the given ID
+func (pm *ProcessManager) GetProcessLogs(instanceID string, fromID int64) ([]ProcessLogEntry, error) {
+	pm.mu.RLock()
+	process, exists := pm.actualState[instanceID]
+	pm.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("no process found with ID: %s", instanceID)
+	}
+
+	if process.LogBuffer == nil {
+		return []ProcessLogEntry{}, nil
+	}
+
+	return process.LogBuffer.GetEntriesFromID(fromID), nil
+}
+
+// GetLatestProcessLogs returns the most recent N log entries for a specific process
+func (pm *ProcessManager) GetLatestProcessLogs(instanceID string, count int) ([]ProcessLogEntry, error) {
+	pm.mu.RLock()
+	process, exists := pm.actualState[instanceID]
+	pm.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("no process found with ID: %s", instanceID)
+	}
+
+	if process.LogBuffer == nil {
+		return []ProcessLogEntry{}, nil
+	}
+
+	return process.LogBuffer.GetLatestEntries(count), nil
+}
+
+// GetProcessLogLatestID returns the ID of the most recent log entry for a specific process
+func (pm *ProcessManager) GetProcessLogLatestID(instanceID string) (int64, error) {
+	pm.mu.RLock()
+	process, exists := pm.actualState[instanceID]
+	pm.mu.RUnlock()
+
+	if !exists {
+		return 0, fmt.Errorf("no process found with ID: %s", instanceID)
+	}
+
+	if process.LogBuffer == nil {
+		return 0, nil
+	}
+
+	return process.LogBuffer.GetLatestID(), nil
+}
+
+// notifyLogCallbacks notifies all registered log callbacks about a new log entry
+func (pm *ProcessManager) notifyLogCallbacks(instanceID string, logEntry ProcessLogEntry) {
+	pm.logMu.RLock()
+	callbacks := make([]LogCallback, len(pm.logCallbacks))
+	copy(callbacks, pm.logCallbacks)
+	pm.logMu.RUnlock()
+
+	for _, callback := range callbacks {
+		go callback(instanceID, logEntry) // Run in goroutine to avoid blocking
+	}
 }
 
 // shutdown handles the graceful termination of all managed subprocesses.
@@ -576,6 +653,13 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 	mp := NewManagedProcess(instance, cmd, port)
 	mp.UpdateState(StateRunning) // Initially assume running, health check will verify
 
+	// Set up log buffer callback to notify ProcessManager when new log entries are added
+	if mp.LogBuffer != nil {
+		mp.LogBuffer.AddCallback(func(logEntry ProcessLogEntry) {
+			pm.notifyLogCallbacks(instance.InstanceID, logEntry)
+		})
+	}
+
 	pm.mu.Lock()
 	pm.actualState[instance.InstanceID] = mp
 	pm.mu.Unlock()
@@ -589,7 +673,13 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 		defer stdoutPipe.Close()
 		scanner := bufio.NewScanner(stdoutPipe)
 		for scanner.Scan() {
-			pm.logger.Info("Subprocess stdout", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "output", scanner.Text())
+			message := scanner.Text()
+			// Log to structured logger as before
+			pm.logger.Info("Subprocess stdout", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "output", message)
+			// Add to log buffer
+			if mp.LogBuffer != nil {
+				mp.LogBuffer.AddEntry("info", "stdout", message, cmd.Process.Pid)
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			pm.logger.Error("Error reading stdout from subprocess", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "error", err)
@@ -603,7 +693,13 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 		defer stderrPipe.Close()
 		scanner := bufio.NewScanner(stderrPipe)
 		for scanner.Scan() {
-			pm.logger.Error("Subprocess stderr", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "output", scanner.Text())
+			message := scanner.Text()
+			// Log to structured logger as before
+			pm.logger.Error("Subprocess stderr", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "output", message)
+			// Add to log buffer
+			if mp.LogBuffer != nil {
+				mp.LogBuffer.AddEntry("error", "stderr", message, cmd.Process.Pid)
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			pm.logger.Error("Error reading stderr from subprocess", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "error", err)

@@ -185,13 +185,21 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 
 ## Task `nexushub-debug-logs`: Debug Application Log Streaming API
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
-**Files:** `nexushub/internal/handlers/logs.go`
+**Implementation status:** Completed (2025-07-11)  
+**Files:** `nexushub/internal/handlers/logs.go`, `nexushub/httpsproxy/proxy.go` (lines 146-150), `nexushub/processes/process.go` (lines 9-114), `nexushub/processes/manager.go` (lines 32-364)
 
 **Details:**
-- Implement `GET /debug/application/{id}/logs` endpoint for real-time log streaming
-- Support log tailing
-- Handle log streaming with proper connection management and reconnection
-- Support multiple concurrent log streaming clients
-- Provide structured log output with timestamps and context
+- ✅ Implemented `GET /debug/application/{id}/logs` endpoint for real-time log streaming
+- ✅ Support log streaming using Server-Sent Events (SSE) for broad client compatibility
+- ✅ Handle log streaming with proper connection management and client disconnect detection
+- ✅ Support multiple concurrent log streaming clients with individual session management
+- ✅ Provide structured log output with timestamps, source, and context via JSON format
+- ✅ Integrated with HTTPS proxy routing for seamless debug workflow
+- ✅ Thread-safe client management with proper cleanup on disconnect
+- ✅ Keepalive mechanism to detect client disconnections and clean up resources
+- ✅ **Full ProcessManager integration:** Log buffer system stores last 1,000 log entries per process
+- ✅ **Real-time log capture:** Intercepts stdout/stderr from managed processes directly
+- ✅ **Polling and callback system:** Combines real-time callbacks with periodic polling for reliability
+- ✅ **Log ID tracking:** Each log entry has unique incremental ID for efficient polling
+- ✅ **Historical log access:** API supports retrieving logs from specific ID onwards
 

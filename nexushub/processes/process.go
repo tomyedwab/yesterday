@@ -6,6 +6,113 @@ import (
 	"time"
 )
 
+// ProcessLogEntry represents a single log entry from a managed process
+type ProcessLogEntry struct {
+	ID        int64     `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+	Level     string    `json:"level"`
+	Source    string    `json:"source"` // "stdout" or "stderr"
+	Message   string    `json:"message"`
+	PID       int       `json:"pid"`
+}
+
+// LogBuffer maintains a circular buffer of recent log entries
+type LogBuffer struct {
+	mu        sync.RWMutex
+	entries   []ProcessLogEntry
+	capacity  int
+	nextID    int64
+	callbacks []func(ProcessLogEntry)
+}
+
+// NewLogBuffer creates a new log buffer with the specified capacity
+func NewLogBuffer(capacity int) *LogBuffer {
+	return &LogBuffer{
+		entries:  make([]ProcessLogEntry, 0, capacity),
+		capacity: capacity,
+		nextID:   1,
+	}
+}
+
+// AddEntry adds a new log entry to the buffer
+func (lb *LogBuffer) AddEntry(level, source, message string, pid int) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	entry := ProcessLogEntry{
+		ID:        lb.nextID,
+		Timestamp: time.Now(),
+		Level:     level,
+		Source:    source,
+		Message:   message,
+		PID:       pid,
+	}
+
+	// Add to buffer (circular buffer behavior)
+	if len(lb.entries) >= lb.capacity {
+		// Remove oldest entry
+		lb.entries = lb.entries[1:]
+	}
+	lb.entries = append(lb.entries, entry)
+	lb.nextID++
+
+	// Notify callbacks
+	for _, callback := range lb.callbacks {
+		go callback(entry) // Run in goroutine to avoid blocking
+	}
+}
+
+// GetEntriesFromID returns all log entries with ID greater than the specified ID
+func (lb *LogBuffer) GetEntriesFromID(fromID int64) []ProcessLogEntry {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	result := make([]ProcessLogEntry, 0)
+	for _, entry := range lb.entries {
+		if entry.ID > fromID {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+// GetLatestEntries returns the most recent N log entries
+func (lb *LogBuffer) GetLatestEntries(count int) []ProcessLogEntry {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	if count <= 0 || len(lb.entries) == 0 {
+		return []ProcessLogEntry{}
+	}
+
+	start := len(lb.entries) - count
+	if start < 0 {
+		start = 0
+	}
+
+	result := make([]ProcessLogEntry, len(lb.entries)-start)
+	copy(result, lb.entries[start:])
+	return result
+}
+
+// AddCallback adds a callback function to be called when new log entries are added
+func (lb *LogBuffer) AddCallback(callback func(ProcessLogEntry)) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.callbacks = append(lb.callbacks, callback)
+}
+
+// GetLatestID returns the ID of the most recent log entry
+func (lb *LogBuffer) GetLatestID() int64 {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	if len(lb.entries) == 0 {
+		return 0
+	}
+	return lb.entries[len(lb.entries)-1].ID
+}
+
 // ProcessState represents the health status of a managed process.
 type ProcessState int
 
@@ -56,6 +163,7 @@ type ManagedProcess struct {
 	Port     int            // The TCP port assigned to this process.
 	PID      int            // Process ID of the running subprocess.
 	State    ProcessState   // Current health/lifecycle state of the process.
+	LogBuffer *LogBuffer    // Buffer for storing recent log entries from this process.
 
 	mu             sync.Mutex // Protects access to this struct's mutable fields.
 	startTime      time.Time  // Time when the process was last started.
@@ -72,6 +180,7 @@ func NewManagedProcess(instance AppInstance, cmd *exec.Cmd, port int) *ManagedPr
 		Port:      port,
 		PID:       cmd.Process.Pid, // Assumes cmd.Process is not nil (i.e., process started)
 		State:     StateStarting,   // Initial state after starting
+		LogBuffer: NewLogBuffer(1000), // Keep last 1000 log entries
 		startTime: time.Now(),
 	}
 }

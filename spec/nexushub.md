@@ -170,15 +170,18 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 
 ## Task `nexushub-debug-status`: Debug Application Status API
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
-**Files:** `nexushub/internal/handlers/status.go`
+**Implementation status:** Completed (2025-07-11)  
+**Files:** `nexushub/internal/handlers/install.go` (lines 172-238)
 
 **Details:**
-- Implement `GET /debug/application/{id}/status` endpoint for application health monitoring
-- Provide application status including:
-  - Process state (running, stopped, failed)
-  - Health check results
-- Integrate with process manager health monitoring system
+- ✅ Implemented `GET /debug/application/{id}/status` endpoint for application health monitoring
+- ✅ Provide application status including:
+  - Process state (running, stopped, failed, pending)
+  - Health check results and port information
+  - Application metadata (appId, displayName, hostName, staticServiceUrl)
+- ✅ Integrate with process manager health monitoring system
+- ✅ Reset cleanup timer when status is checked (keeps app alive)
+- ✅ Handle missing applications and process manager integration
 
 ## Task `nexushub-debug-logs`: Debug Application Log Streaming API
 **Reference:** design/nexusdebug.md  

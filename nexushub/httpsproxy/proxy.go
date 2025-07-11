@@ -47,7 +47,7 @@ type Proxy struct {
 // NewProxy creates and returns a new Proxy instance.
 // It takes the listen address, paths to SSL cert and key files,
 // and a HostnameResolver instance.
-func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsproxy_types.ProcessManagerInterface) *Proxy {
+func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsproxy_types.ProcessManagerInterface, instanceProvider httpsproxy_types.AppInstanceProvider) *Proxy {
 	dialer := net.Dialer{
 		Timeout:   600 * time.Second,
 		KeepAlive: 600 * time.Second,
@@ -60,7 +60,7 @@ func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsprox
 	
 	// Create logger for debug handler
 	logger := slog.Default()
-	debugHandler := handlers.NewDebugHandler(pm, logger, internalSecret)
+	debugHandler := handlers.NewDebugHandler(pm, instanceProvider, logger, internalSecret)
 	
 	return &Proxy{
 		listenAddr:     listenAddr,
@@ -73,13 +73,7 @@ func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsprox
 	}
 }
 
-// Start initializes and starts the HTTPS reverse proxy server.
-// It sets up an HTTP server with a handler that proxies requests.
-// SSL/TLS is configured using the provided certificate and key files.
-// The server listens on the address specified in p.listenAddr.
-// This method blocks until the server stops or an error occurs.
-// If certificate files cannot be loaded, it will log the error and panic.
-func (p *Proxy) Start() error {
+func (p *Proxy) Start(instanceProvider httpsproxy_types.AppInstanceProvider) error {
 	// Load TLS certificates
 	cert, err := tls.LoadX509KeyPair(p.certFile, p.keyFile)
 	if err != nil {
@@ -101,6 +95,7 @@ func (p *Proxy) Start() error {
 	log.Printf("Starting HTTPS proxy server on %s", p.listenAddr)
 	return p.server.ListenAndServeTLS("", "") // Cert and key are in TLSConfig
 }
+
 
 // handleRequest is the HTTP handler function for the proxy.
 // It checks for "X-Application-Id" header. If set, uses it to find the AppInstance.

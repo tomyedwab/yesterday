@@ -158,7 +158,7 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 
 ## Task `nexushub-debug-install`: Debug Application Installation API
 **Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
+**Implementation status:** Completed (2025-07-10)  
 **Files:** `nexushub/internal/handlers/install.go`
 
 **Details:**

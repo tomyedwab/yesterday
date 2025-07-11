@@ -55,40 +55,41 @@ type UploadChunk struct {
 
 // UploadSession represents an ongoing upload session
 type UploadSession struct {
-	ApplicationID string                  `json:"applicationId"`
-	TotalChunks   int                    `json:"totalChunks"`
-	Chunks        map[int]*UploadChunk   `json:"chunks"`
-	FileHash      string                 `json:"fileHash"`
-	Completed     bool                   `json:"completed"`
-	CreatedAt     time.Time              `json:"createdAt"`
-	mu            sync.RWMutex           `json:"-"`
+	ApplicationID string               `json:"applicationId"`
+	TotalChunks   int                  `json:"totalChunks"`
+	Chunks        map[int]*UploadChunk `json:"chunks"`
+	FileHash      string               `json:"fileHash"`
+	Completed     bool                 `json:"completed"`
+	CreatedAt     time.Time            `json:"createdAt"`
+	mu            sync.RWMutex         `json:"-"`
 }
 
 // UploadStatus represents the status of an upload session
 type UploadStatus struct {
-	ApplicationID   string  `json:"applicationId"`
-	TotalChunks     int     `json:"totalChunks"`
-	ReceivedChunks  int     `json:"receivedChunks"`
-	Progress        float64 `json:"progress"`
-	Completed       bool    `json:"completed"`
-	FileHash        string  `json:"fileHash,omitempty"`
-	Error           string  `json:"error,omitempty"`
+	ApplicationID  string  `json:"applicationId"`
+	TotalChunks    int     `json:"totalChunks"`
+	ReceivedChunks int     `json:"receivedChunks"`
+	Progress       float64 `json:"progress"`
+	Completed      bool    `json:"completed"`
+	FileHash       string  `json:"fileHash,omitempty"`
+	Error          string  `json:"error,omitempty"`
 }
 
 // DebugHandler handles debug application lifecycle management
 type DebugHandler struct {
 	processManager   httpsproxy_types.ProcessManagerInterface
+	instanceProvider httpsproxy_types.AppInstanceProvider
 	logger           *slog.Logger
-	debugApps        map[string]*DebugApplication // In-memory storage for debug apps
-	uploadSessions   map[string]*UploadSession    // In-memory storage for upload sessions
+	debugApps        map[string]*DebugApplication  // In-memory storage for debug apps
+	uploadSessions   map[string]*UploadSession     // In-memory storage for upload sessions
 	cleanupCancels   map[string]context.CancelFunc // Cleanup timer cancellation functions
-	uploadDir        string                       // Directory for storing uploaded packages
+	uploadDir        string                        // Directory for storing uploaded packages
 	internalSecret   string
-	mu               sync.RWMutex                 // Protects debugApps, uploadSessions, and cleanupCancels
+	mu               sync.RWMutex // Protects debugApps, uploadSessions, and cleanupCancels
 }
 
 // NewDebugHandler creates a new debug handler instance
-func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, logger *slog.Logger, internalSecret string) *DebugHandler {
+func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, instanceProvider httpsproxy_types.AppInstanceProvider, logger *slog.Logger, internalSecret string) *DebugHandler {
 	// Create upload directory
 	uploadDir := filepath.Join(os.TempDir(), "nexushub-debug-uploads")
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
@@ -98,6 +99,7 @@ func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, lo
 
 	return &DebugHandler{
 		processManager:   processManager,
+		instanceProvider: instanceProvider,
 		logger:           logger,
 		debugApps:        make(map[string]*DebugApplication),
 		uploadSessions:   make(map[string]*UploadSession),
@@ -152,7 +154,7 @@ func (h *DebugHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	fileHash := r.FormValue("fileHash")
 
 	if chunkIndexStr == "" || totalChunksStr == "" || fileHash == "" {
-		h.logger.Error("Missing required upload parameters", 
+		h.logger.Error("Missing required upload parameters",
 			"chunkIndex", chunkIndexStr, "totalChunks", totalChunksStr, "fileHash", fileHash)
 		http.Error(w, "Missing required parameters: chunkIndex, totalChunks, fileHash", http.StatusBadRequest)
 		return
@@ -189,8 +191,8 @@ func (h *DebugHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("Received chunk upload", 
-		"appId", appID, "chunkIndex", chunkIndex, "totalChunks", totalChunks, 
+	h.logger.Info("Received chunk upload",
+		"appId", appID, "chunkIndex", chunkIndex, "totalChunks", totalChunks,
 		"chunkSize", len(chunkData), "fileHash", fileHash)
 
 	// Process the chunk
@@ -210,14 +212,14 @@ func (h *DebugHandler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "completed",
+			"status":  "completed",
 			"message": "Package upload completed successfully",
 		})
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "received",
+			"status":  "received",
 			"message": "Chunk received successfully",
 		})
 	}
@@ -240,7 +242,7 @@ func (h *DebugHandler) HandleCreateApplication(w http.ResponseWriter, r *http.Re
 
 	// Validate required fields
 	if req.AppID == "" || req.DisplayName == "" || req.HostName == "" || req.DbName == "" {
-		h.logger.Error("Missing required fields in debug application request", 
+		h.logger.Error("Missing required fields in debug application request",
 			"appId", req.AppID, "displayName", req.DisplayName, "hostName", req.HostName, "dbName", req.DbName)
 		http.Error(w, "Missing required fields: appId, displayName, hostName, dbName", http.StatusBadRequest)
 		return
@@ -270,12 +272,13 @@ func (h *DebugHandler) HandleCreateApplication(w http.ResponseWriter, r *http.Re
 	// Store in memory (in production, this would be stored in a database)
 	h.mu.Lock()
 	h.debugApps[appID] = debugApp
+	h.instanceProvider.RemoveDebugInstance(appID)
 	h.mu.Unlock()
 
-	h.logger.Info("Debug application created", 
-		"id", appID, 
-		"appId", req.AppID, 
-		"displayName", req.DisplayName, 
+	h.logger.Info("Debug application created",
+		"id", appID,
+		"appId", req.AppID,
+		"displayName", req.DisplayName,
 		"hostName", req.HostName,
 		"staticServiceUrl", req.StaticServiceURL)
 
@@ -327,6 +330,7 @@ func (h *DebugHandler) HandleDeleteApplication(w http.ResponseWriter, r *http.Re
 	// Remove from storage
 	delete(h.debugApps, appID)
 	delete(h.uploadSessions, appID)
+	h.instanceProvider.RemoveDebugInstance(appID)
 
 	h.logger.Info("Debug application deleted", "id", appID, "appId", debugApp.AppID)
 
@@ -338,23 +342,24 @@ func (h *DebugHandler) cleanupExistingApplication(appID string) error {
 	for id, app := range h.debugApps {
 		if app.AppID == appID {
 			h.logger.Info("Cleaning up existing debug application", "id", id, "appId", appID)
-			
+
 			// Stop if running
 			if app.Status == "running" {
 				if err := h.stopDebugApplication(app); err != nil {
 					h.logger.Warn("Failed to stop existing debug application", "id", id, "error", err)
 				}
 			}
-			
+
 			// Cancel any pending cleanup timer
 			if cancel, exists := h.cleanupCancels[id]; exists {
 				cancel()
 				delete(h.cleanupCancels, id)
 			}
-			
+
 			// Remove from storage
 			delete(h.debugApps, id)
 			delete(h.uploadSessions, id)
+			h.instanceProvider.RemoveDebugInstance(id)
 		}
 	}
 	return nil
@@ -364,12 +369,12 @@ func (h *DebugHandler) cleanupExistingApplication(appID string) error {
 func (h *DebugHandler) stopDebugApplication(app *DebugApplication) error {
 	// In a real implementation, this would interact with the process manager
 	// to stop the running instance. For now, we'll just update the status.
-	
+
 	h.logger.Info("Stopping debug application", "id", app.ID, "appId", app.AppID)
-	
+
 	// Update status to stopped
 	app.Status = "stopped"
-	
+
 	return nil
 }
 
@@ -402,18 +407,18 @@ func ValidateDebugApplicationRequest(req *DebugApplicationRequest) error {
 	if req.DbName == "" {
 		return fmt.Errorf("dbName is required")
 	}
-	
+
 	// Validate hostname format
 	if !strings.Contains(req.HostName, ".") {
 		return fmt.Errorf("hostName must be a valid hostname format")
 	}
-	
+
 	// Validate static service URL if provided
 	if req.StaticServiceURL != "" {
 		if !strings.HasPrefix(req.StaticServiceURL, "http://") && !strings.HasPrefix(req.StaticServiceURL, "https://") {
 			return fmt.Errorf("staticServiceUrl must be a valid HTTP(S) URL")
 		}
 	}
-	
+
 	return nil
 }

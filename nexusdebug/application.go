@@ -29,15 +29,16 @@ type DebugApplication struct {
 	CreatedAt        string `json:"createdAt"`
 }
 
-// ApplicationStatus represents the status of a debug application
+// ApplicationStatus represents the current status of a debug application
 type ApplicationStatus struct {
-	ID                string `json:"id"`
-	Status            string `json:"status"`
-	ProcessID         int    `json:"processId,omitempty"`
-	Port              int    `json:"port,omitempty"`
-	HealthCheckStatus string `json:"healthCheckStatus,omitempty"`
-	LastHealthCheck   string `json:"lastHealthCheck,omitempty"`
-	ErrorMessage      string `json:"errorMessage,omitempty"`
+	ApplicationID string                 `json:"applicationId"`
+	Status        string                 `json:"status"`
+	ProcessID     int                    `json:"processId,omitempty"`
+	Port          int                    `json:"port,omitempty"`
+	HealthCheck   string                 `json:"healthCheck,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+	LastUpdated   string                 `json:"lastUpdated"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ApplicationManager handles debug application lifecycle operations
@@ -188,15 +189,15 @@ func (am *ApplicationManager) waitForApplicationReady(ctx context.Context) error
 			}
 
 			log.Printf("Application status: %s", status.Status)
-			if status.HealthCheckStatus != "" {
-				log.Printf("Health check: %s", status.HealthCheckStatus)
+			if status.HealthCheck != "" {
+				log.Printf("Health check: %s", status.HealthCheck)
 			}
-			if status.ErrorMessage != "" {
-				log.Printf("Error: %s", status.ErrorMessage)
+			if status.Error != "" {
+				log.Printf("Error: %s", status.Error)
 			}
 
 			// Check if application is ready
-			if status.Status == "running" && status.HealthCheckStatus == "healthy" {
+			if status.Status == "running" && status.HealthCheck == "healthy" {
 				log.Printf("Application is ready!")
 				if status.Port > 0 {
 					log.Printf("Application listening on port: %d", status.Port)
@@ -205,8 +206,8 @@ func (am *ApplicationManager) waitForApplicationReady(ctx context.Context) error
 			}
 
 			// Check for failure states
-			if status.Status == "failed" || status.Status == "crashed" {
-				return fmt.Errorf("application failed to start: %s", status.ErrorMessage)
+			if status.Status == "stopped" {
+				return fmt.Errorf("application failed to start: %s", status.Error)
 			}
 		}
 	}

@@ -42,6 +42,9 @@ type AdminInstanceProvider struct {
 	lastEventID int
 	initialized bool
 
+	debugInstances   map[string]AppInstance // Keyed by InstanceID
+	debugInstancesMu sync.RWMutex
+
 	stopChan       chan struct{}
 	pollInterval   time.Duration
 	httpClient     *http.Client
@@ -84,6 +87,7 @@ func NewAdminInstanceProvider(adminAppID, internalSecret, installDir string, sta
 			Timeout:   60 * time.Second,
 		},
 		internalSecret: internalSecret,
+		debugInstances: make(map[string]AppInstance),
 	}
 }
 
@@ -155,7 +159,31 @@ func (p *AdminInstanceProvider) GetAppInstances(ctx context.Context) ([]AppInsta
 	// Return a copy to prevent modification
 	instCopy := make([]AppInstance, len(p.instances))
 	copy(instCopy, p.instances)
+
+	// Add debug instances
+	p.debugInstancesMu.RLock()
+	defer p.debugInstancesMu.RUnlock()
+	for _, instance := range p.debugInstances {
+		instCopy = append(instCopy, instance)
+	}
+
 	return instCopy, nil
+}
+
+// AddDebugInstance adds a temporary debug instance to the provider
+func (p *AdminInstanceProvider) AddDebugInstance(instance AppInstance) {
+	p.debugInstancesMu.Lock()
+	defer p.debugInstancesMu.Unlock()
+	p.debugInstances[instance.InstanceID] = instance
+	log.Printf("Added debug instance %s", instance.InstanceID)
+}
+
+// RemoveDebugInstance removes a temporary debug instance from the provider
+func (p *AdminInstanceProvider) RemoveDebugInstance(instanceID string) {
+	p.debugInstancesMu.Lock()
+	defer p.debugInstancesMu.Unlock()
+	delete(p.debugInstances, instanceID)
+	log.Printf("Removed debug instance %s", instanceID)
 }
 
 // makeRequest makes a cross-service request to the admin service

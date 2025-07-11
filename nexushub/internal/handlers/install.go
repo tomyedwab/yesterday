@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/tomyedwab/yesterday/nexushub/packages"
+	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
 // InstallRequest represents the request payload for installing debug applications
@@ -36,11 +37,11 @@ type InstallResponse struct {
 type ApplicationStatus struct {
 	ApplicationID string                 `json:"applicationId"`
 	Status        string                 `json:"status"`
-	ProcessID     int                   `json:"processId,omitempty"`
-	Port          int                   `json:"port,omitempty"`
-	HealthCheck   string                `json:"healthCheck,omitempty"`
-	Error         string                `json:"error,omitempty"`
-	LastUpdated   string                `json:"lastUpdated"`
+	ProcessID     int                    `json:"processId,omitempty"`
+	Port          int                    `json:"port,omitempty"`
+	HealthCheck   string                 `json:"healthCheck,omitempty"`
+	Error         string                 `json:"error,omitempty"`
+	LastUpdated   string                 `json:"lastUpdated"`
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -100,7 +101,7 @@ func (h *DebugHandler) HandleInstallApplication(w http.ResponseWriter, r *http.R
 
 	// Install the package using the package manager
 	packageManager := packages.NewPackageManager()
-	
+
 	// Copy package to package manager directory with expected naming
 	if err := h.preparePackageForInstallation(debugApp, packageManager); err != nil {
 		h.logger.Error("Failed to prepare package for installation", "appId", appID, "error", err)
@@ -125,12 +126,12 @@ func (h *DebugHandler) HandleInstallApplication(w http.ResponseWriter, r *http.R
 	// Start the application via process manager
 	if err := h.startDebugApplicationInstance(debugApp, packageManager); err != nil {
 		h.logger.Error("Failed to start debug application", "appId", appID, "error", err)
-		
+
 		// Update status to failed but still return success for the installation
 		h.mu.Lock()
 		debugApp.Status = "failed"
 		h.mu.Unlock()
-		
+
 		// Return partial success - installed but not started
 		response := InstallResponse{
 			ApplicationID: appID,
@@ -138,7 +139,7 @@ func (h *DebugHandler) HandleInstallApplication(w http.ResponseWriter, r *http.R
 			Message:       fmt.Sprintf("Application installed but failed to start: %v", err),
 			InstalledAt:   time.Now().Format(time.RFC3339),
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(response)
@@ -221,13 +222,13 @@ func (h *DebugHandler) HandleApplicationStatus(w http.ResponseWriter, r *http.Re
 			// Note: GetAppInstanceByID returns the AppInstance config, but we need ManagedProcess for runtime info
 			// For now, we'll use the returned port and indicate the app is running
 			status.Port = port
-			status.HealthCheck = "running" // Process manager only returns running instances
-			status.ProcessID = 0 // ProcessID not available from this interface
+			status.HealthCheck = "healthy" // Process manager only returns running instances
+			status.ProcessID = 0           // ProcessID not available from this interface
 		} else {
 			// Application should be running but not found in process manager
 			status.Status = "stopped"
 			status.Error = "Application not found in process manager"
-			
+
 			// Update stored status
 			h.mu.Lock()
 			debugApp.Status = "stopped"
@@ -278,9 +279,9 @@ func (h *DebugHandler) preparePackageForInstallation(debugApp *DebugApplication,
 		return fmt.Errorf("failed to copy package: %w", err)
 	}
 
-	h.logger.Info("Package prepared for installation", 
-		"appId", debugApp.AppID, 
-		"source", debugApp.PackagePath, 
+	h.logger.Info("Package prepared for installation",
+		"appId", debugApp.AppID,
+		"source", debugApp.PackagePath,
 		"destination", expectedPackagePath)
 
 	return nil
@@ -304,37 +305,40 @@ func (h *DebugHandler) startDebugApplicationInstance(debugApp *DebugApplication,
 
 	// The process manager integration would happen here
 	// For now, we'll simulate starting the application
-	h.logger.Info("Starting debug application instance", 
+	h.logger.Info("Starting debug application instance",
 		"appId", debugApp.ID,
 		"binaryPath", appBinaryPath,
 		"installPath", appInstancePath)
 
-	// In a real implementation, this would:
-	// 1. Create an AppInstance with the binary path and configuration
-	// 2. Add it to the process manager
-	// 3. Start the process
-	// 4. Monitor its health
+	// Create an AppInstance for the process manager
+	appInstance := processes.AppInstance{
+		InstanceID: debugApp.ID,
+		HostName:   debugApp.HostName,
+		PkgPath:    appInstancePath,
+		DebugPort:  0, // Not used for debug instances
+	}
 
-	// For now, we'll just log that it would be started
-	h.logger.Info("Debug application instance would be started", "appId", debugApp.ID)
-	
+	// Add the instance to the provider
+	h.instanceProvider.AddDebugInstance(appInstance)
+
 	return nil
 }
 
-// stopDebugApplicationInstance stops a running debug application via process manager  
+// stopDebugApplicationInstance stops a running debug application via process manager
 func (h *DebugHandler) stopDebugApplicationInstance(debugApp *DebugApplication) error {
 	h.logger.Info("Stopping debug application instance", "appId", debugApp.ID)
-	
+
 	// Get the app instance from process manager
 	if appInstance, _, err := h.processManager.GetAppInstanceByID(debugApp.ID); err == nil && appInstance != nil {
 		// Stop the instance (this would be the actual implementation)
 		h.logger.Info("Found running instance, stopping", "appId", debugApp.ID)
 		// The process manager would handle stopping the process
+		h.instanceProvider.RemoveDebugInstance(debugApp.ID)
 	}
-	
+
 	// Update status
 	debugApp.Status = "stopped"
-	
+
 	return nil
 }
 
@@ -342,19 +346,19 @@ func (h *DebugHandler) stopDebugApplicationInstance(debugApp *DebugApplication) 
 // This function cancels any existing cleanup timer for the application and starts a new one
 func (h *DebugHandler) scheduleApplicationCleanup(appID string) {
 	h.mu.Lock()
-	
+
 	// Cancel existing cleanup timer if one exists
 	if existingCancel, exists := h.cleanupCancels[appID]; exists {
 		existingCancel()
 		h.logger.Debug("Cancelled existing cleanup timer", "appId", appID)
 	}
-	
+
 	// Create new context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cleanupCancels[appID] = cancel
-	
+
 	h.mu.Unlock()
-	
+
 	// Start cleanup timer in a goroutine
 	go func() {
 		// Wait for 1 hour or cancellation
@@ -373,35 +377,35 @@ func (h *DebugHandler) scheduleApplicationCleanup(appID string) {
 // performApplicationCleanup performs the actual cleanup of an application
 func (h *DebugHandler) performApplicationCleanup(appID string) {
 	h.logger.Info("Auto-cleaning up inactive debug application", "appId", appID)
-	
+
 	// Check if application still exists
 	h.mu.RLock()
 	debugApp, exists := h.debugApps[appID]
 	h.mu.RUnlock()
-	
+
 	if !exists {
 		h.logger.Debug("Application already cleaned up", "appId", appID)
 		return
 	}
-	
+
 	// Stop the application
 	if debugApp.Status == "running" {
 		h.stopDebugApplicationInstance(debugApp)
 	}
-	
+
 	// Remove from debug apps and cleanup timers
 	h.mu.Lock()
 	delete(h.debugApps, appID)
 	delete(h.cleanupCancels, appID)
 	delete(h.uploadSessions, appID)
 	h.mu.Unlock()
-	
+
 	// Clean up uploaded package file
 	if debugApp.PackagePath != "" {
 		if err := os.Remove(debugApp.PackagePath); err != nil {
 			h.logger.Warn("Failed to remove package file during cleanup", "path", debugApp.PackagePath, "error", err)
 		}
 	}
-	
+
 	h.logger.Info("Debug application cleaned up", "appId", appID)
 }

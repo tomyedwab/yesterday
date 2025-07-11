@@ -9,3 +9,10 @@ type ProcessManagerInterface interface {
 	GetAppInstanceByHostName(hostname string) (*processes.AppInstance, int, error)
 	GetAppInstanceByID(id string) (*processes.AppInstance, int, error) // Added for AppID lookup
 }
+
+// AppInstanceProvider defines the methods the DebugHandler needs
+// from the AdminInstanceProvider. This helps in decoupling and testing.
+type AppInstanceProvider interface {
+	AddDebugInstance(instance processes.AppInstance)
+	RemoveDebugInstance(instanceID string)
+}

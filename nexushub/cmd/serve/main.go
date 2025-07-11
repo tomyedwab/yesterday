@@ -160,12 +160,12 @@ func main() {
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
-	httpProxy = httpsproxy.NewProxy(proxyListenAddr, proxyCertFile, proxyKeyFile, internalSecret, processManager)
+	httpProxy = httpsproxy.NewProxy(proxyListenAddr, proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
 
 	// 7. Start the HTTPS Proxy server in a goroutine
 	go func() {
 		logger.Info("Starting HTTPS Proxy server...", "address", proxyListenAddr)
-		if err := httpProxy.Start(); err != nil && err != http.ErrServerClosed {
+		if err := httpProxy.Start(appProvider); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTPS Proxy server failed to start or unexpectedly stopped", "error", err)
 			// Consider a more robust way to signal main application failure if proxy is critical
 			// For example, by closing a channel that main select{}s on, or calling sigChan <- syscall.SIGTERM

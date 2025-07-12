@@ -13,8 +13,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - [Go Client Library](clients/go.md) - Authentication and API communication
 
 ## Task `nexusdebug-cli-setup`: CLI Application Structure and Initialization
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed
 **Files:** `nexusdebug/cmd/main.go`, `nexusdebug/go.mod`
 
 **Details:**
@@ -30,8 +30,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Initialize configuration validation and error handling
 
 ## Task `nexusdebug-authentication`: Admin Service Authentication
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed
 **Files:** `nexusdebug/auth.go`, `nexusdebug/cmd/main.go`, `nexusdebug/go.mod`
 
 **Details:**
@@ -52,7 +52,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Authentication is performed during CLI initialization with proper cleanup on exit
 
 ## Task `nexusdebug-application-management`: Debug Application Lifecycle
-**Reference:** design/nexusdebug.md  
+**Reference:** design/nexusdebug.md
 **Implementation status:** Completed
 **Files:** `nexusdebug/application.go`
 
@@ -64,8 +64,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Implement application cleanup and removal on exit
 
 ## Task `nexusdebug-build-system`: Application Build and Package Management
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-01-09)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-01-09)
 **Files:** `nexusdebug/build.go`, `nexusdebug/cmd/main.go`
 
 **Details:**
@@ -78,8 +78,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Detect and validate package format and structure
 
 ## Task `nexusdebug-file-upload`: Chunked File Upload Implementation
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-01-09)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-01-09)
 **Files:** `nexusdebug/upload.go`
 
 **Details:**
@@ -94,8 +94,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Monitor application startup and provide status feedback to user
 
 ## Task `nexusdebug-monitoring`: Application Status and Log Monitoring
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-01-11)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-01-11)
 **Files:** `nexusdebug/monitor.go`, `nexusdebug/monitor_test.go`, `nexusdebug/cmd/main.go`
 
 **Details:**
@@ -119,29 +119,39 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Implemented graceful shutdown handling for all monitoring components
 
 ## Task `nexusdebug-interactive-control`: User Input and Hot-Reload
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
-**Files:** `nexusdebug/control.go`
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-01-12)
+**Files:** `nexusdebug/control.go`, `nexusdebug/cmd/main.go`
 
 **Details:**
-- Implement non-blocking keyboard input detection
-- Handle 'R' key press for rebuild and redeploy workflow:
+- ✅ Implement non-blocking keyboard input detection by toggling between raw and cooked modes: logs are output in cooked mode, and then the terminal switches to raw mode for input detection
+- ✅ Handle 'R' key press for rebuild and redeploy workflow:
   1. Stop current application instance
   2. Execute build command
   3. Upload new package
   4. Install and start updated application
   5. Resume log monitoring
-- Handle 'Q' key press for graceful shutdown:
+- ✅ Handle 'Q' key press for graceful shutdown:
   1. Stop application instance
   2. Clean up debug application
   3. Close authentication session
   4. Exit CLI tool
-- Provide clear user instructions and command feedback
-- Implement graceful error handling during hot-reload operations
+- ✅ Provide clear user instructions and command feedback
+- ✅ Implement graceful error handling during hot-reload operations
+
+**Implementation Notes:**
+- Created `Control` struct that manages terminal modes and coordinates with monitor output
+- Implemented keyboard input detection that alternates between raw mode (for input) and cooked mode (for output)
+- Integrated rebuild workflow that uses existing BuildManager, UploadManager, and ApplicationManager
+- Implemented graceful shutdown that properly cleans up all resources
+- Added support for Ctrl+C handling in addition to Q key
+- Coordinated with Monitor's DisplayLogs to avoid terminal conflicts
+- Used time-based input checking (100ms intervals) to balance responsiveness and performance
+- Integrated interactive control system with main CLI application workflow
 
 ## Task `nexusdebug-error-handling`: Comprehensive Error Management
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Not Started
 **Files:** `nexusdebug/errors.go`
 
 **Details:**
@@ -158,8 +168,8 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Support error reporting and diagnostic information collection
 
 ## Task `nexusdebug-integration-testing`: Testing and Quality Assurance
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Not Started  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Not Started
 **Files:** `nexusdebug/*_test.go`
 
 **Details:**

@@ -238,17 +238,24 @@ func main() {
 		go monitor.DisplayLogs(monitorCtx)
 	}
 
-	fmt.Println("\nNexusDebug CLI initialized successfully!")
-	fmt.Println("Press 'R' to rebuild and redeploy, 'Q' to quit")
-	fmt.Println("(Interactive controls will be implemented in subsequent tasks)")
+	// Initialize interactive control system
+	control := nexusdebug.NewControl(authManager.Client, app, monitor)
+	control.SetManagers(buildManager, uploadManager, appManager)
 
-	// Keep the application running and monitoring
+	// Start interactive mode
+	fmt.Printf("\n🎮 Starting interactive control mode...\n")
+	if err := control.StartInteractiveMode(monitorCtx); err != nil {
+		log.Printf("Warning: failed to start interactive mode: %v", err)
+	}
+
+	// Keep the application running with interactive controls and monitoring
 	select {
 	case <-ctx.Done():
 		fmt.Println("\nShutting down...")
 	}
 
-	// Stop monitoring
+	// Stop interactive control and monitoring
+	control.StopInteractiveMode()
 	monitor.StopMonitoring()
 
 	// Cleanup on exit

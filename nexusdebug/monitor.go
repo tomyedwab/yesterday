@@ -369,9 +369,9 @@ func (m *Monitor) DisplayLogs(ctx context.Context) {
 		case <-m.stopChan:
 			return
 		case logEntry := <-m.logChan:
-			fmt.Println(FormatLogEntry(logEntry))
+			fmt.Printf("\r%s\n", FormatLogEntry(logEntry))
 		case status := <-m.statusChan:
-			fmt.Println(FormatStatusUpdate(status))
+			fmt.Printf("\r%s\n", FormatStatusUpdate(status))
 		}
 	}
 }

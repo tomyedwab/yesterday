@@ -43,13 +43,21 @@ install: PHONY
 		-out /usr/local/etc/nexushub/certs/server.crt \
 		-days 365 -nodes \
 		-subj "/C=US/ST=California/L=San Francisco/O=Yesterday/OU=Development/CN=yesterday.localhost" \
-		-addext "subjectAltName = DNS:*.yesterday.localhost"
+		-addext "subjectAltName = DNS:*.yesterday.localhost" \
+		>/dev/null 2>&1
 	cp build/pkg/* /usr/local/etc/nexushub/packages/
 	install -m 755 build/nexusdebug/nexusdebug /usr/local/bin/
 	install -m 755 build/nexushub/nexushub /usr/local/bin/
 
 serve: PHONY
-	mkdir -p dist/install
+	mkdir -p dist/install dist/certs
+	openssl req -x509 -newkey rsa:4096 \
+	    -keyout dist/certs/server.key \
+		-out dist/certs/server.crt \
+		-days 365 -nodes \
+		-subj "/C=US/ST=California/L=San Francisco/O=Yesterday/OU=Development/CN=yesterday.localhost" \
+		-addext "subjectAltName = DNS:*.yesterday.localhost" \
+		>/dev/null 2>&1
 	if command -v hl >/dev/null 2>&1; then \
 		PKG_DIR=$(PWD)/build/pkg \
 		CERTS_DIR=$(PWD)/dist/certs \

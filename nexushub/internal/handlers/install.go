@@ -242,7 +242,7 @@ func (h *DebugHandler) preparePackageForInstallation(debugApp *DebugApplication,
 	// Get PKG_DIR from package manager (via environment)
 	pkgDir := os.Getenv("PKG_DIR")
 	if pkgDir == "" {
-		return fmt.Errorf("PKG_DIR environment variable not set")
+		pkgDir = "/usr/local/etc/nexushub/packages"
 	}
 
 	// Ensure PKG_DIR exists
@@ -286,7 +286,7 @@ func (h *DebugHandler) startDebugApplicationInstance(debugApp *DebugApplication,
 	// Create app instance configuration for the process manager
 	installDir := packageManager.GetInstallDir()
 	if installDir == "" {
-		return fmt.Errorf("INSTALL_DIR environment variable not set")
+		installDir = "/usr/local/etc/nexushub/install"
 	}
 
 	appInstancePath := filepath.Join(installDir, debugApp.ID)

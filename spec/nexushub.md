@@ -14,8 +14,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - [KrunClient](krunclient.md) - Virtualized application execution
 
 ## Task `nexushub-main-initialization`: Service Initialization and Bootstrap
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (168 lines)
 
 **Details:**
@@ -26,8 +26,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Exit with appropriate error codes on initialization failures
 
 ## Task `nexushub-static-apps`: Static Application Configuration
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (lines 28-44)
 
 **Details:**
@@ -40,15 +40,15 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Initialize `AdminInstanceProvider` with static configuration and internal secret
 
 ## Task `nexushub-process-manager`: Process Manager Integration
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (lines 46-75)
 
 **Details:**
 - Initialize `PortManager` with port range 10000-19999 for dynamic allocation
 - Configure `ProcessManager` with production-ready parameters:
   - Health check interval: 10 seconds
-  - Health check timeout: 3 seconds  
+  - Health check timeout: 3 seconds
   - Consecutive failures threshold: 2
   - Restart backoff: 2 seconds initial, 15 seconds maximum
   - Graceful shutdown period: 5 seconds
@@ -56,22 +56,22 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Implement first reconcile completion callback to coordinate admin service startup
 - Start admin instance provider polling after static applications are running
 
-## Task `nexushub-https-proxy`: HTTPS Proxy Integration  
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+## Task `nexushub-https-proxy`: HTTPS Proxy Integration
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (lines 125-148)
 
 **Details:**
 - Configure HTTPS proxy with listen address `:8443`
-- Set SSL certificate paths: `dist/certs/server.crt` and `dist/certs/server.key`
+- Set SSL certificate paths: `$CERTS_DIR/server.crt` and `$CERTS_DIR/server.key` (defaults to /usr/local/etc/nexushub)
 - Initialize proxy with internal secret and process manager reference for hostname resolution
 - Start proxy server in dedicated goroutine with error handling
 - Handle `http.ErrServerClosed` as normal shutdown signal
 - Log proxy startup, operation, and shutdown events
 
 ## Task `nexushub-graceful-shutdown`: Graceful Shutdown Orchestration
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (lines 82-123)
 
 **Details:**
@@ -86,8 +86,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Ensure proxy variable initialization check to handle early shutdown scenarios
 
 ## Task `nexushub-service-coordination`: Inter-Service Coordination
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (lines 77-81, 155-168)
 
 **Details:**
@@ -99,8 +99,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Implement final wait on context completion to ensure clean shutdown
 
 ## Task `nexushub-configuration`: Service Configuration Management
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (lines 55-74)
 
 **Details:**
@@ -112,8 +112,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Environment-aware port allocation ranges that don't conflict with development servers
 
 ## Task `nexushub-error-handling`: Error Handling and Resilience
-**Reference:** design/nexushub.md  
-**Implementation status:** Completed  
+**Reference:** design/nexushub.md
+**Implementation status:** Completed
 **Files:** `nexushub/cmd/serve/main.go` (throughout)
 
 **Details:**
@@ -125,8 +125,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Nil pointer checks before calling stop methods during shutdown sequence
 
 ## Task `nexushub-debug-application`: Debug Application Management API
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-01-09)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-01-09)
 **Files:** `nexushub/internal/handlers/debug.go`, `nexushub/cmd/serve/main.go` (lines 152-176)
 
 **Details:**
@@ -140,8 +140,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Debug applications are in "pending" state until they are installed
 
 ## Task `nexushub-debug-upload`: Debug Package Upload API
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-07-10)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-07-10)
 **Files:** `nexushub/internal/handlers/upload.go`
 
 **Details:**
@@ -157,8 +157,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - ✅ Automatic file assembly and temporary storage management
 
 ## Task `nexushub-debug-install`: Debug Application Installation API
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-07-10)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-07-10)
 **Files:** `nexushub/internal/handlers/install.go`
 
 **Details:**
@@ -169,8 +169,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Debug packages are automatically removed if no new installs occur and no process checks its status using the `/debug/application/{id}/status` endpoint for over an hour
 
 ## Task `nexushub-debug-status`: Debug Application Status API
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-07-11)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-07-11)
 **Files:** `nexushub/internal/handlers/install.go` (lines 172-238)
 
 **Details:**
@@ -184,8 +184,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - ✅ Handle missing applications and process manager integration
 
 ## Task `nexushub-debug-logs`: Debug Application Log Streaming API
-**Reference:** design/nexusdebug.md  
-**Implementation status:** Completed (2025-07-11)  
+**Reference:** design/nexusdebug.md
+**Implementation status:** Completed (2025-07-11)
 **Files:** `nexushub/internal/handlers/logs.go`, `nexushub/httpsproxy/proxy.go` (lines 146-150), `nexushub/processes/process.go` (lines 9-114), `nexushub/processes/manager.go` (lines 32-364)
 
 **Details:**
@@ -202,4 +202,3 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - ✅ **Polling and callback system:** Combines real-time callbacks with periodic polling for reliability
 - ✅ **Log ID tracking:** Each log entry has unique incremental ID for efficient polling
 - ✅ **Historical log access:** API supports retrieving logs from specific ID onwards
-

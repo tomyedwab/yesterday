@@ -15,9 +15,17 @@ type PackageManager struct {
 }
 
 func NewPackageManager() *PackageManager {
+	pkgDir := os.Getenv("PKG_DIR")
+	if pkgDir == "" {
+		pkgDir = "/usr/local/etc/nexushub/packages"
+	}
+	installDir := os.Getenv("INSTALL_DIR")
+	if installDir == "" {
+		installDir = "/usr/local/etc/nexushub/install"
+	}
 	return &PackageManager{
-		pkgDir:     os.Getenv("PKG_DIR"),
-		installDir: os.Getenv("INSTALL_DIR"),
+		pkgDir:     pkgDir,
+		installDir: installDir,
 	}
 }
 

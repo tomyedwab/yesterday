@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -155,8 +156,12 @@ func main() {
 	// openssl genrsa -out server.key 2048
 	// openssl req -new -x509 -sha256 -key server.key -out server.crt -days 3650
 	proxyListenAddr := ":8443"
-	proxyCertFile := "dist/certs/server.crt" // Placeholder
-	proxyKeyFile := "dist/certs/server.key"  // Placeholder
+	certsDir := os.Getenv("CERTS_DIR")
+	if certsDir == "" {
+		certsDir = "/usr/local/etc/nexushub/certs"
+	}
+	proxyCertFile := fmt.Sprintf("%s/server.crt", certsDir)
+	proxyKeyFile := fmt.Sprintf("%s/server.key", certsDir)
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler

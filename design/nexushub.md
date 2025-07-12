@@ -1,12 +1,12 @@
 # Design Document: NexusHub Service Orchestrator
 
-**Author:** System Architecture Team  
-**Date:** 2025-06-24  
+**Author:** System Architecture Team
+**Date:** 2025-06-24
 **Status:** Approved for Implementation
 
 **Related Design Documents:**
 - [Process Manager](processes.md) - Application lifecycle management
-- [HTTPS Proxy](httpsproxy.md) - Request routing and SSL termination  
+- [HTTPS Proxy](httpsproxy.md) - Request routing and SSL termination
 - [KrunClient](krunclient.md) - Virtualized application execution
 
 **Technical Specification:** [spec/nexushub.md](../spec/nexushub.md)
@@ -89,7 +89,7 @@ The orchestrator integrates three major subsystems, each with specific responsib
    - Monitors application health and performs automatic recovery
    - Allocates dynamic ports and manages resource cleanup
 
-2. **HTTPS Proxy** ([design/httpsproxy.md](httpsproxy.md))  
+2. **HTTPS Proxy** ([design/httpsproxy.md](httpsproxy.md))
    - Terminates SSL connections and routes requests based on hostname
    - Integrates with Process Manager for dynamic backend discovery
    - Provides secure external access to managed applications
@@ -120,7 +120,7 @@ The orchestrator follows a carefully designed initialization sequence to ensure 
    - Configure ProcessManager with health monitoring and restart policies
    - Set subprocess working directory to project root for consistent execution environment
 
-4. **Proxy Initialization**  
+4. **Proxy Initialization**
    - Configure HTTPS proxy with SSL certificate paths and listen address
    - Connect proxy to ProcessManager for hostname-to-backend resolution
    - Start proxy in dedicated goroutine to avoid blocking main thread
@@ -139,14 +139,14 @@ The system supports both static and dynamic configuration through a layered appr
 - Enables local development without external dependencies
 - Includes debug port configuration for Vite development server integration
 
-**Dynamic Configuration (Production)**  
+**Dynamic Configuration (Production)**
 - AdminInstanceProvider polls admin service for live configuration updates
 - Started only after static applications are confirmed running
 - Merges with static configuration, with dynamic taking precedence
 
 **Shared Configuration**
 - Internal secret generated at startup and shared across all components
-- SSL certificate paths configurable but defaults to `dist/certs/`
+- SSL certificate paths configurable but defaults to `/usr/etc/local/nexushub/certs`
 - Port ranges and timeouts configurable through ProcessManager config struct
 
 ### 5.3 Security Architecture
@@ -177,7 +177,7 @@ The orchestrator implements comprehensive error handling:
 - Structured error logging with context for debugging
 - Early validation of dependencies (certificates, directories, ports)
 
-**Runtime Failures**  
+**Runtime Failures**
 - Component failures handled gracefully without cascading failures
 - HTTPS proxy failures logged but don't terminate other services
 - Process Manager handles individual application failures independently
@@ -213,7 +213,7 @@ Comprehensive observability is built into the orchestrator:
 The orchestrator manages multiple concurrent operations:
 
 - **Main Thread**: Runs ProcessManager reconciliation loop (blocking)
-- **Signal Handler**: Dedicated goroutine for shutdown signal processing  
+- **Signal Handler**: Dedicated goroutine for shutdown signal processing
 - **HTTPS Proxy**: Dedicated goroutine for HTTP server operation
 - **Admin Provider**: Background polling goroutine for configuration updates
 
@@ -257,7 +257,7 @@ The architecture supports several future enhancements:
 
 ### 8.1 Deployment Requirements
 
-- SSL certificates available at `dist/certs/server.crt` and `dist/certs/server.key`
+- SSL certificates available in CERTS_DIR or at `/usr/local/etc/nexushub/certs/server.crt` and `/usr/local/etc/nexushub/certs/server.key`
 - Project directory structure with `dist/` containing application binaries
 - Network access to admin service API for dynamic configuration
 

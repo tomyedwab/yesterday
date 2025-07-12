@@ -24,7 +24,7 @@ func configureTLSForLocalhost(baseURL string) (*tls.Config, error) {
 	}
 
 	hostname := parsedURL.Hostname()
-	
+
 	// Only apply custom TLS config for .localhost domains
 	if !strings.HasSuffix(hostname, ".localhost") {
 		return nil, nil // Not a localhost domain, use default TLS
@@ -33,8 +33,7 @@ func configureTLSForLocalhost(baseURL string) (*tls.Config, error) {
 	// Check if CERTS_DIR environment variable is set
 	certsDir := os.Getenv("CERTS_DIR")
 	if certsDir == "" {
-		log.Printf("CERTS_DIR not set, using default TLS verification for %s", hostname)
-		return nil, nil // No certificate dir specified, use default TLS
+		certsDir = "/usr/local/etc/nexushub/certs"
 	}
 
 	// Load certificates from the specified directory

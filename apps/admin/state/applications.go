@@ -10,17 +10,14 @@ import (
 
 // Application represents an application in the system.
 type Application struct {
-	InstanceID         string  `db:"instance_id" json:"instanceId"`
-	AppID              string  `db:"app_id" json:"appId"`
-	DisplayName        string  `db:"display_name" json:"displayName"`
-	HostName           string  `db:"host_name" json:"hostName"`
-	DebugPublishToken  *string `db:"debug_publish_token" json:"debugPublishToken,omitempty"`
-	DebugStaticService *string `db:"debug_static_service" json:"debugStaticService,omitempty"`
+	InstanceID  string `db:"instance_id" json:"instanceId"`
+	AppID       string `db:"app_id" json:"appId"`
+	DisplayName string `db:"display_name" json:"displayName"`
+	HostName    string `db:"host_name" json:"hostName"`
 }
 
 // Event types for application management
 const CreateApplicationEventType string = "CreateApplication"
-const CreateDebugApplicationEventType string = "CreateDebugApplication"
 const UpdateApplicationEventType string = "UpdateApplication"
 const DeleteApplicationEventType string = "DeleteApplication"
 
@@ -30,14 +27,6 @@ type CreateApplicationEvent struct {
 	AppID       string `json:"appId"`
 	DisplayName string `json:"displayName"`
 	HostName    string `json:"hostName"`
-}
-
-type CreateDebugApplicationEvent struct {
-	events.GenericEvent
-	AppID         string  `json:"appId"`
-	DisplayName   string  `json:"displayName"`
-	HostName      string  `json:"hostName"`
-	StaticService *string `json:"staticService,omitempty"`
 }
 
 type UpdateApplicationEvent struct {
@@ -62,9 +51,7 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 			instance_id TEXT PRIMARY KEY,
 			app_id TEXT NOT NULL,
 			display_name TEXT NOT NULL,
-			host_name TEXT NOT NULL,
-			debug_publish_token TEXT,
-			debug_static_service TEXT
+			host_name TEXT NOT NULL
 		)`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create applications table: %w", err)
@@ -111,34 +98,6 @@ func ApplicationsHandleCreateEvent(tx *sqlx.Tx, event *CreateApplicationEvent) (
 		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
 		VALUES ($1, $2, $3, $4)`,
 		instanceID, event.AppID, event.DisplayName, event.HostName)
-
-	if err != nil {
-		return false, fmt.Errorf("failed to create application %s: %w", event.DisplayName, err)
-	}
-
-	return true, nil
-}
-
-func ApplicationsHandleCreateDebugApplicationEvent(tx *sqlx.Tx, event *CreateDebugApplicationEvent) (bool, error) {
-	var err error
-	fmt.Printf("Creating application: %s\n", event.DisplayName)
-
-	// Generate unique instance ID
-	instanceID := uuid.New().String()
-
-	debugPublishToken := uuid.New().String()
-
-	if event.StaticService != nil {
-		_, err = tx.Exec(`
-			INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, debug_publish_token, debug_static_service)
-			VALUES ($1, $2, $3, $4, $5, $6)`,
-			instanceID, event.AppID, event.DisplayName, event.HostName, debugPublishToken, *event.StaticService)
-	} else {
-		_, err = tx.Exec(`
-			INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name, debug_publish_token)
-			VALUES ($1, $2, $3, $4, $5)`,
-			instanceID, event.AppID, event.DisplayName, event.HostName, debugPublishToken)
-	}
 
 	if err != nil {
 		return false, fmt.Errorf("failed to create application %s: %w", event.DisplayName, err)
@@ -217,7 +176,7 @@ func GetApplication(db *sqlx.DB, instanceId string) (*Application, error) {
 // GetApplications retrieves all applications sorted by display name.
 func GetApplications(db *sqlx.DB) ([]Application, error) {
 	ret := []Application{}
-	err := db.Select(&ret, "SELECT instance_id, app_id, display_name, host_name, debug_publish_token, debug_static_service FROM applications_v1 ORDER BY instance_id")
+	err := db.Select(&ret, "SELECT instance_id, app_id, display_name, host_name FROM applications_v1 ORDER BY instance_id")
 	if err != nil {
 		return ret, fmt.Errorf("failed to select all applications: %v", err)
 	}

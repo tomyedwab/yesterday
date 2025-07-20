@@ -19,7 +19,7 @@ func TestNewMonitor(t *testing.T) {
 		ID:          "test-app-id",
 		AppID:       "debug-test-app",
 		DisplayName: "Debug: Test App",
-		HostName:    "test.debug.yesterday.localhost",
+		HostName:    "test.debug",
 	}
 
 	monitor := NewMonitor(nil, app)

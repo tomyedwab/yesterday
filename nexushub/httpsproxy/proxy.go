@@ -35,6 +35,7 @@ import (
 // Errors during startup (e.g., loading certificates) are logged and cause a panic.
 type Proxy struct {
 	listenAddr     string
+	host           string
 	certFile       string
 	keyFile        string
 	pm             httpsproxy_types.ProcessManagerInterface
@@ -47,7 +48,7 @@ type Proxy struct {
 // NewProxy creates and returns a new Proxy instance.
 // It takes the listen address, paths to SSL cert and key files,
 // and a HostnameResolver instance.
-func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsproxy_types.ProcessManagerInterface, instanceProvider httpsproxy_types.AppInstanceProvider) *Proxy {
+func NewProxy(listenAddr, host, certFile, keyFile, internalSecret string, pm httpsproxy_types.ProcessManagerInterface, instanceProvider httpsproxy_types.AppInstanceProvider) *Proxy {
 	dialer := net.Dialer{
 		Timeout:   600 * time.Second,
 		KeepAlive: 600 * time.Second,
@@ -57,13 +58,14 @@ func NewProxy(listenAddr, certFile, keyFile, internalSecret string, pm httpsprox
 		Dial:                dialer.Dial,
 		TLSHandshakeTimeout: 180 * time.Second,
 	}
-	
+
 	// Create logger for debug handler
 	logger := slog.Default()
 	debugHandler := handlers.NewDebugHandler(pm, instanceProvider, logger, internalSecret)
-	
+
 	return &Proxy{
 		listenAddr:     listenAddr,
+		host:           host,
 		certFile:       certFile,
 		keyFile:        keyFile,
 		pm:             pm,
@@ -95,7 +97,6 @@ func (p *Proxy) Start(instanceProvider httpsproxy_types.AppInstanceProvider) err
 	log.Printf("Starting HTTPS proxy server on %s", p.listenAddr)
 	return p.server.ListenAndServeTLS("", "") // Cert and key are in TLSConfig
 }
-
 
 // handleRequest is the HTTP handler function for the proxy.
 // It checks for "X-Application-Id" header. If set, uses it to find the AppInstance.
@@ -198,9 +199,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			log.Printf("<%s> %s%s 404 [No active instances]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
-	} else {
+	} else if strings.HasSuffix(originalHostForLog, "."+p.host) {
 		// Fallback to hostname-based routing
-		hostname := originalHostForLog // r.Host includes port if specified by client
+		hostname := strings.TrimSuffix(originalHostForLog, "."+p.host)
 		resolutionIdentifier = "host:" + hostname
 		instance, port, err = p.pm.GetAppInstanceByHostName(hostname)
 		if err != nil {
@@ -213,6 +214,10 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			log.Printf("<%s> %s%s 404 [No active instances]", traceID, resolutionIdentifier, r.URL.Path)
 			return
 		}
+	} else {
+		http.Error(w, "Request for invalid host name "+originalHostForLog, http.StatusServiceUnavailable)
+		log.Printf("<%s> %s%s 404 [Invalid host name]", traceID, originalHostForLog, r.URL.Path)
+		return
 	}
 
 	if r.URL.Path == "/api/set_token" {
@@ -236,7 +241,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/access_token" {
-		code := access.HandleAccessTokenRequest(p.pm, instance, w, r, traceID)
+		code := access.HandleAccessTokenRequest(p.pm, instance, p.host, w, r, traceID)
 		log.Printf("<%s> %s/api/access_token %d", traceID, resolutionIdentifier, code)
 		return
 	}

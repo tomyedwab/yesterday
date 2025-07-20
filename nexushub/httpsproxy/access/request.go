@@ -17,6 +17,7 @@ import (
 func HandleAccessTokenRequest(
 	pm httpsproxy_types.ProcessManagerInterface,
 	instance *processes.AppInstance,
+	host string,
 	w http.ResponseWriter,
 	r *http.Request,
 	traceID string,
@@ -38,7 +39,7 @@ func HandleAccessTokenRequest(
 	if err != nil {
 		// There is no refresh token cookie, redirect to login service
 		respJson, _ := json.Marshal(map[string]string{
-			"login_url": fmt.Sprintf("https://%s/", loginInstance.HostName),
+			"login_url": fmt.Sprintf("https://%s.%s/", loginInstance.HostName, host),
 		})
 		w.WriteHeader(http.StatusOK)
 		w.Write(respJson)
@@ -60,7 +61,7 @@ func HandleAccessTokenRequest(
 		message, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusUnauthorized {
 			respJson, _ := json.Marshal(map[string]string{
-				"login_url": fmt.Sprintf("https://%s/", loginInstance.HostName),
+				"login_url": fmt.Sprintf("https://%s.%s/", loginInstance.HostName, host),
 			})
 			w.WriteHeader(http.StatusOK)
 			w.Write(respJson)

@@ -83,7 +83,7 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 
 	_, err = tx.Exec(`
 		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
-		SELECT '3bf3e3c0-6e51-482a-b180-00f6aa568ee9', 'github.com/tomyedwab/yesterday/apps/login', 'Login service', 'login.yesterday.localhost:8443'
+		SELECT '3bf3e3c0-6e51-482a-b180-00f6aa568ee9', 'github.com/tomyedwab/yesterday/apps/login', 'Login service', 'login'
 	`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create login application: %w", err)
@@ -91,7 +91,7 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 
 	_, err = tx.Exec(`
 		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
-		SELECT '18736e4f-93f9-4606-a7be-863c7986ea5b', 'github.com/tomyedwab/yesterday/apps/admin', 'Admin service', 'admin.yesterday.localhost:8443'
+		SELECT '18736e4f-93f9-4606-a7be-863c7986ea5b', 'github.com/tomyedwab/yesterday/apps/admin', 'Admin service', 'admin'
 	`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create admin application: %w", err)

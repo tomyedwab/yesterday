@@ -51,12 +51,12 @@ func main() {
 	staticApps := []processes.StaticAppConfig{
 		{
 			InstanceID: "3bf3e3c0-6e51-482a-b180-00f6aa568ee9",
-			HostName:   "login.yesterday.localhost:8443",
+			HostName:   "login",
 			PkgPath:    filepath.Join(installDir, "3bf3e3c0-6e51-482a-b180-00f6aa568ee9"),
 		},
 		{
 			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",
-			HostName:   "admin.yesterday.localhost:8443",
+			HostName:   "admin",
 			PkgPath:    filepath.Join(installDir, "18736e4f-93f9-4606-a7be-863c7986ea5b"),
 		},
 	}
@@ -165,7 +165,7 @@ func main() {
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
-	httpProxy = httpsproxy.NewProxy(proxyListenAddr, proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
+	httpProxy = httpsproxy.NewProxy(proxyListenAddr, fmt.Sprintf("yesterday.localhost%s", proxyListenAddr), proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
 
 	// 7. Start the HTTPS Proxy server in a goroutine
 	go func() {

@@ -32,8 +32,8 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 
 **Details:**
 - Define static application configurations for critical services:
-  - Login service: `login.yesterday.localhost:8443` with instance ID `3bf3e3c0-6e51-482a-b180-00f6aa568ee9`
-  - Admin service: `admin.yesterday.localhost:8443` with instance ID `18736e4f-93f9-4606-a7be-863c7986ea5b`
+  - Login service: domain `login` with instance ID `3bf3e3c0-6e51-482a-b180-00f6aa568ee9`
+  - Admin service: domain `admin` with instance ID `18736e4f-93f9-4606-a7be-863c7986ea5b`
 - Configure static paths: `dist/github.com/tomyedwab/yesterday/apps/{login,admin}/static`
 - Configure binary paths: `dist/github.com/tomyedwab/yesterday/apps/{login,admin}/`
 - Set debug port for admin service (5173 for Vite development server)

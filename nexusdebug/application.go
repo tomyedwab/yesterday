@@ -67,7 +67,7 @@ func (am *ApplicationManager) generateAppIdentifiers() (appID, displayName, host
 	// Generate identifiers
 	appID = fmt.Sprintf("debug-%s", cleanName)
 	displayName = fmt.Sprintf("Debug: %s", am.appName)
-	hostName = fmt.Sprintf("%s.debug.yesterday.localhost", cleanName)
+	hostName = fmt.Sprintf("%s.debug", cleanName)
 	dbName = fmt.Sprintf("debug_%s.db", strings.ReplaceAll(cleanName, "-", "_"))
 
 	return appID, displayName, hostName, dbName

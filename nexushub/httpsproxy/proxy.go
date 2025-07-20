@@ -135,8 +135,8 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// Handle install endpoint
-		if strings.HasSuffix(r.URL.Path, "/install") && r.Method == http.MethodPost {
-			p.debugHandler.HandleInstallApplication(w, r)
+		if strings.HasSuffix(r.URL.Path, "/install-dev") && r.Method == http.MethodPost {
+			p.debugHandler.HandleInstallDevApplication(w, r)
 			return
 		}
 		// Handle status endpoint

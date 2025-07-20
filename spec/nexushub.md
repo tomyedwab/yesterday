@@ -162,7 +162,7 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 **Files:** `nexushub/internal/handlers/install.go`
 
 **Details:**
-- Implement `POST /debug/application/{id}/install` endpoint for application deployment
+- Implement `POST /debug/application/{id}/install-dev` endpoint for application deployment
 - Extract and validate uploaded packages before installation
 - Once the package is installed, the debug application can be run by the process manager by adding it temporarily to the AppInstanceProvider
 - Reinstalling a package will stop the previous instance and start a new one

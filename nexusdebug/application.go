@@ -154,7 +154,7 @@ func (am *ApplicationManager) InstallApplication(ctx context.Context) error {
 	log.Printf("Installing debug application: %s", am.currentApp.ID)
 
 	// Make the install request
-	_, err := am.client.Post(ctx, fmt.Sprintf("/debug/application/%s/install", am.currentApp.ID), nil, nil)
+	_, err := am.client.Post(ctx, fmt.Sprintf("/debug/application/%s/install-dev", am.currentApp.ID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to install debug application: %w", err)
 	}

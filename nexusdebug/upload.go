@@ -25,29 +25,29 @@ import (
 const (
 	// Default chunk size for uploads (2MB)
 	DefaultChunkSize = 2 * 1024 * 1024
-	
+
 	// Maximum number of upload retries per chunk
 	MaxUploadRetries = 3
-	
+
 	// Upload timeout per chunk
 	ChunkUploadTimeout = 60 * time.Second
-	
+
 	// Total upload timeout
 	TotalUploadTimeout = 30 * time.Minute
 )
 
 // UploadProgress represents the current upload progress
 type UploadProgress struct {
-	BytesUploaded int64
-	TotalBytes    int64
-	ChunksTotal   int
+	BytesUploaded  int64
+	TotalBytes     int64
+	ChunksTotal    int
 	ChunksUploaded int
-	CurrentChunk  int
-	Percentage    float64
-	StartTime     time.Time
-	ElapsedTime   time.Duration
-	EstimatedTime time.Duration
-	UploadSpeed   float64 // bytes per second
+	CurrentChunk   int
+	Percentage     float64
+	StartTime      time.Time
+	ElapsedTime    time.Duration
+	EstimatedTime  time.Duration
+	UploadSpeed    float64 // bytes per second
 }
 
 // UploadManager handles chunked file upload operations
@@ -128,10 +128,10 @@ func (um *UploadManager) UploadPackage(ctx context.Context, packagePath string, 
 
 	// Initialize progress tracking
 	progress := &UploadProgress{
-		TotalBytes:    totalSize,
-		ChunksTotal:   totalChunks,
-		StartTime:     time.Now(),
-		Percentage:    0.0,
+		TotalBytes:  totalSize,
+		ChunksTotal: totalChunks,
+		StartTime:   time.Now(),
+		Percentage:  0.0,
 	}
 
 	// Set up total timeout
@@ -347,7 +347,7 @@ func (um *UploadManager) GetUploadProgress() <-chan *UploadProgress {
 // UploadPackageFromBuildManager uploads a package from a build manager
 func (um *UploadManager) UploadPackageFromBuildManager(ctx context.Context, buildManager *BuildManager, progressCallback UploadProgressCallback) error {
 	packagePath := buildManager.GetPackagePath()
-	
+
 	// Verify package exists and was built
 	if _, err := os.Stat(packagePath); err != nil {
 		return fmt.Errorf("package file not found: %s - ensure build completed successfully", packagePath)
@@ -369,7 +369,7 @@ func (um *UploadManager) InstallUploadedPackage(ctx context.Context) error {
 	log.Printf("🚀 Installing uploaded package...")
 
 	// Trigger installation via the install endpoint
-	response, err := um.client.Post(ctx, fmt.Sprintf("/debug/application/%s/install", app.ID), nil, nil)
+	response, err := um.client.Post(ctx, fmt.Sprintf("/debug/application/%s/install-dev", app.ID), nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to trigger installation: %w", err)
 	}
@@ -402,16 +402,16 @@ func (um *UploadManager) UploadAndInstall(ctx context.Context, packagePath strin
 // PrintUploadProgress is a utility function for printing upload progress
 func PrintUploadProgress(progress *UploadProgress) {
 	elapsed := progress.ElapsedTime.Truncate(time.Second)
-	
+
 	if progress.EstimatedTime > 0 {
 		eta := progress.EstimatedTime.Truncate(time.Second)
-		log.Printf("📤 Upload Progress: %.1f%% (%d/%d chunks) - %s elapsed, %s remaining", 
+		log.Printf("📤 Upload Progress: %.1f%% (%d/%d chunks) - %s elapsed, %s remaining",
 			progress.Percentage, progress.ChunksUploaded, progress.ChunksTotal, elapsed, eta)
 	} else {
-		log.Printf("📤 Upload Progress: %.1f%% (%d/%d chunks) - %s elapsed", 
+		log.Printf("📤 Upload Progress: %.1f%% (%d/%d chunks) - %s elapsed",
 			progress.Percentage, progress.ChunksUploaded, progress.ChunksTotal, elapsed)
 	}
-	
+
 	if progress.UploadSpeed > 0 {
 		speed := progress.UploadSpeed / 1024 // Convert to KB/s
 		if speed > 1024 {

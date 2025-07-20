@@ -25,6 +25,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
   - Build command (optional): Defaults to `make build`
   - Package filename (optional): Defaults to `dist/package.zip`
   - Static service URL (optional): For proxying frontend requests during development
+  - Mode flag (optional): `--mode=debug` or `--mode=prod` to specify operation mode (defaults to debug)
 - Implement CLI help text and usage information
 - Set up structured logging for development workflow feedback
 - Initialize configuration validation and error handling
@@ -90,7 +91,7 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Provide upload progress feedback to user
 - Handle upload failures with retry mechanism
 - Support resumable uploads for large packages
-- Implement application installation via `POST /debug/application/{id}/install` endpoint
+- Implement application installation via `POST /debug/application/{id}/install-dev` endpoint
 - Monitor application startup and provide status feedback to user
 
 ## Task `nexusdebug-monitoring`: Application Status and Log Monitoring
@@ -148,3 +149,43 @@ The CLI tool will be implemented in Go and located in the `nexusdebug/` director
 - Coordinated with Monitor's DisplayLogs to avoid terminal conflicts
 - Used time-based input checking (100ms intervals) to balance responsiveness and performance
 - Integrated interactive control system with main CLI application workflow
+
+## Task `nexusdebug-package-installation`: Package Installation from Directory
+**Reference:** design/nexusdebug.md
+**Implementation status:** Not implemented
+
+**Details:**
+- Implement endpoint integration for `POST /debug/application/{id}/install-package`
+- Accept package installation parameters:
+  - `name`: Package name to install (passed to `InstallPackage` in `nexushub/packages/manager.go`)
+  - `displayName`: Display name for the application
+  - `hostName`: Hostname for the application
+- Generate instance ID automatically within the installation process
+- Handle package installation from the installation directory rather than uploaded packages
+- Integrate with existing `InstallPackage` function in `nexushub/packages/manager.go:110`
+- Automatically publish `CreateApplicationEvent` to admin service upon successful installation
+- Provide installation progress feedback and error handling
+- Support both uploaded package installation and directory-based package installation workflows
+
+## Task `nexusdebug-production-mode`: Production Mode Implementation
+**Reference:** design/nexusdebug.md
+**Implementation status:** Not implemented
+
+**Details:**
+- Implement production mode workflow triggered by `--mode=prod` flag
+- Production mode workflow:
+  1. Authenticate with admin service
+  2. Build application package using specified build command
+  3. Upload package to Nexushub using chunked file upload API
+  4. Install package permanently using `POST /debug/application/{id}/install-package` endpoint
+  5. Automatically register application with admin service via `CreateApplicationEvent`
+  6. Exit after successful installation
+- Skip debug-specific features in production mode:
+  - No debug application creation
+  - No log tailing or monitoring
+  - No interactive control (R/Q key handling)
+  - No hot-reload functionality
+- Provide clear feedback during production installation process
+- Handle production installation errors with appropriate cleanup
+- Validate successful permanent installation before exit
+- Support same CLI parameters as debug mode but with different workflow execution

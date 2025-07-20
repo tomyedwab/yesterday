@@ -45,8 +45,8 @@ type ApplicationStatus struct {
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// HandleInstallApplication handles POST /debug/application/{id}/install for application deployment
-func (h *DebugHandler) HandleInstallApplication(w http.ResponseWriter, r *http.Request) {
+// HandleInstallApplication handles POST /debug/application/{id}/install-dev for application deployment
+func (h *DebugHandler) HandleInstallDevApplication(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return

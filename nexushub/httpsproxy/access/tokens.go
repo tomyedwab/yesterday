@@ -3,7 +3,7 @@ package access
 import (
 	"time"
 
-	"github.com/tomyedwab/yesterday/apps/login/types"
+	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
 type AccessToken struct {
@@ -15,7 +15,7 @@ type AccessToken struct {
 
 var AccessTokenStore = make(map[string]AccessToken)
 
-func createAccessToken(response *types.AccessTokenResponse) {
+func CreateAccessToken(response *types.AccessTokenResponse) {
 	AccessTokenStore[response.AccessToken] = AccessToken{
 		AccessToken:   response.AccessToken,
 		ApplicationID: response.ApplicationID,

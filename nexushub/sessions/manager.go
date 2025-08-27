@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/tomyedwab/yesterday/apps/login/types"
+	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
 var (
@@ -83,7 +83,7 @@ func (m *SessionManager) DeleteExpiredSessions() error {
 
 // GetAccessToken creates a new access token which is stored in-memory in
 // NexusHub, and rotates the refresh token in the database.
-func (m *SessionManager) CreateAccessToken(session *Session, request *types.AccessTokenRequest) (*types.AccessTokenResponse, error) {
+func (m *SessionManager) CreateAccessToken(session *Session, applicationID string) (*types.AccessTokenResponse, error) {
 	if time.Since(time.Unix(int64(session.LastRefreshed), 0)) > m.sessionExpiry {
 		session.DBDelete(m.db)
 		return nil, ErrSessionExpired
@@ -102,6 +102,6 @@ func (m *SessionManager) CreateAccessToken(session *Session, request *types.Acce
 		Expiry:        expiresAt,
 		RefreshToken:  refreshToken,
 		AccessToken:   uuid.New().String(),
-		ApplicationID: request.ApplicationID,
+		ApplicationID: applicationID,
 	}, nil
 }

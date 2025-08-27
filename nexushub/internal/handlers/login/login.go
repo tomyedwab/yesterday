@@ -1,4 +1,4 @@
-package handlers
+package login
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	"github.com/tomyedwab/yesterday/apps/admin/types"
-	"github.com/tomyedwab/yesterday/apps/login/sessions"
+	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
 func HandleLogin(w http.ResponseWriter, r *http.Request) {

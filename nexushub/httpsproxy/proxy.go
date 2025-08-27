@@ -19,6 +19,7 @@ import (
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers"
+	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/login"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
@@ -75,7 +76,7 @@ func NewProxy(listenAddr, host, certFile, keyFile, internalSecret string, pm htt
 	}
 }
 
-func (p *Proxy) Start(instanceProvider httpsproxy_types.AppInstanceProvider) error {
+func (p *Proxy) Start(contextFn func(net.Listener) context.Context, instanceProvider httpsproxy_types.AppInstanceProvider) error {
 	// Load TLS certificates
 	cert, err := tls.LoadX509KeyPair(p.certFile, p.keyFile)
 	if err != nil {
@@ -84,8 +85,9 @@ func (p *Proxy) Start(instanceProvider httpsproxy_types.AppInstanceProvider) err
 	}
 
 	p.server = &http.Server{
-		Addr:    p.listenAddr,
-		Handler: http.HandlerFunc(p.handleRequest),
+		BaseContext: contextFn,
+		Addr:        p.listenAddr,
+		Handler:     http.HandlerFunc(p.handleRequest),
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 		},
@@ -154,33 +156,12 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Special routing rule: /public/login always routes to the login service regardless of Host header
-	if r.URL.Path == "/public/login" || r.URL.Path == "/public/logout" {
-		resolutionIdentifier = "login-service"
-		instance, port, err = p.pm.GetAppInstanceByID("3bf3e3c0-6e51-482a-b180-00f6aa568ee9")
-		if err != nil {
-			http.Error(w, "Login service not found", http.StatusNotFound)
-			log.Printf("<%s> %s%s 404 [Login service not found]", traceID, resolutionIdentifier, r.URL.Path)
-			return
-		}
-		if instance == nil {
-			http.Error(w, "Login service unavailable", http.StatusServiceUnavailable)
-			log.Printf("<%s> %s%s 503 [Login service unavailable]", traceID, resolutionIdentifier, r.URL.Path)
-			return
-		}
-
-		// Route to the login service - treat as /public/* (unauthenticated)
-		targetURL := &url.URL{
-			Scheme: "http", // Backend services are HTTP
-			Host:   "localhost:" + strconv.Itoa(port),
-		}
-
-		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-		reverseProxy.Transport = p.transport
-		r.Host = targetURL.Host
-		r.Header.Add("X-Trace-ID", traceID)
-
-		log.Printf("<%s> %s%s => %s [login-service]", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
-		reverseProxy.ServeHTTP(w, r)
+	if r.URL.Path == "/public/login" {
+		login.HandleLogin(w, r)
+		return
+	}
+	if r.URL.Path == "/public/logout" {
+		login.HandleLogout(w, r)
 		return
 	}
 
@@ -220,6 +201,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO(tom) STOPSHIP remove this once we consolidate domains
 	if r.URL.Path == "/api/set_token" {
 		// Get token and continue URL from URL parameters
 		token := r.URL.Query().Get("token")
@@ -241,8 +223,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/access_token" {
-		code := access.HandleAccessTokenRequest(p.pm, instance, p.host, w, r, traceID)
-		log.Printf("<%s> %s/api/access_token %d", traceID, resolutionIdentifier, code)
+		login.HandleAccessToken(w, r, p.host, instance)
 		return
 	}
 

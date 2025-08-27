@@ -1,11 +1,11 @@
-package handlers
+package login
 
 import (
 	"fmt"
 	"net/http"
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
-	"github.com/tomyedwab/yesterday/apps/login/sessions"
+	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
 func HandleLogout(w http.ResponseWriter, r *http.Request) {

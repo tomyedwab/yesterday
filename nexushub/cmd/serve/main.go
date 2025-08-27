@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -13,15 +16,21 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy"
 	"github.com/tomyedwab/yesterday/nexushub/packages"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
+	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
 func main() {
 	var httpProxy *httpsproxy.Proxy // Declare proxy variable for access in shutdown handler
 
 	internalSecret := uuid.New().String()
+	// TODO(tom) STOPSHIP temporary stopgap to make internal cross service requests work
+	os.Setenv("INTERNAL_SECRET", internalSecret)
 
 	// 1. Setup logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -46,6 +55,12 @@ func main() {
 	}
 
 	installDir := packageManager.GetInstallDir()
+
+	db := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
+	sessionManager, err := sessions.NewManager(db, 10*time.Minute, 1*time.Hour)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// 2. Create AdminInstanceProvider with static instances for critical services
 	staticApps := []processes.StaticAppConfig{
@@ -167,10 +182,14 @@ func main() {
 	// httpProxy is declared at the top of main for access in the shutdown handler
 	httpProxy = httpsproxy.NewProxy(proxyListenAddr, fmt.Sprintf("yesterday.localhost%s", proxyListenAddr), proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
 
+	contextFn := func(_ net.Listener) context.Context {
+		return context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)
+	}
+
 	// 7. Start the HTTPS Proxy server in a goroutine
 	go func() {
 		logger.Info("Starting HTTPS Proxy server...", "address", proxyListenAddr)
-		if err := httpProxy.Start(appProvider); err != nil && err != http.ErrServerClosed {
+		if err := httpProxy.Start(contextFn, appProvider); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTPS Proxy server failed to start or unexpectedly stopped", "error", err)
 			// Consider a more robust way to signal main application failure if proxy is critical
 			// For example, by closing a channel that main select{}s on, or calling sigChan <- syscall.SIGTERM

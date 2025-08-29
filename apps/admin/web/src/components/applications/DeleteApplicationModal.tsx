@@ -40,10 +40,7 @@ export const DeleteApplicationModal = ({
 
   const isSystemApplication = (instanceId: string): boolean => {
     // Check for core system applications that shouldn't be deleted
-    return (
-      instanceId === "3bf3e3c0-6e51-482a-b180-00f6aa568ee9" ||
-      instanceId === "18736e4f-93f9-4606-a7be-863c7986ea5b"
-    );
+    return instanceId === "MBtskI6D";
   };
 
   const handleSubmit = async () => {

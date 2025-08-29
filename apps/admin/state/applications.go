@@ -78,7 +78,7 @@ func ApplicationsHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, 
 
 	_, err = tx.Exec(`
 		INSERT INTO applications_v1 (instance_id, app_id, display_name, host_name)
-		SELECT '18736e4f-93f9-4606-a7be-863c7986ea5b', 'github.com/tomyedwab/yesterday/apps/admin', 'Admin service', 'admin'
+		SELECT 'MBtskI6D', 'github.com/tomyedwab/yesterday/apps/admin', 'Admin service', 'admin'
 	`)
 	if err != nil {
 		return false, fmt.Errorf("failed to create admin application: %w", err)
@@ -135,8 +135,7 @@ func ApplicationsHandleDeleteEvent(tx *sqlx.Tx, event *DeleteApplicationEvent) (
 	fmt.Printf("Deleting application: %s\n", event.InstanceID)
 
 	// Prevent deletion of core system applications
-	if event.InstanceID == "3bf3e3c0-6e51-482a-b180-00f6aa568ee9" ||
-		event.InstanceID == "18736e4f-93f9-4606-a7be-863c7986ea5b" {
+	if event.InstanceID == "MBtskI6D" {
 		return false, fmt.Errorf("cannot delete core system applications")
 	}
 

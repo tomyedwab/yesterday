@@ -8,15 +8,20 @@ import (
 	"log/slog"
 	"net"
 	"net/http" // For file system operations
+	"net/http/httputil"
+	"net/url"
+	"strconv"
 
 	// For path manipulation
 	"strings" // For string manipulation
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/login"
+	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
 // Proxy represents the HTTPS reverse proxy server.
@@ -96,8 +101,6 @@ func (p *Proxy) Start(contextFn func(net.Listener) context.Context, instanceProv
 // Otherwise, it proxies the request to that instance.
 // If resolution fails or the backend is unavailable, it returns an appropriate error.
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	//var instance *processes.AppInstance
-	//var port int
 	//var err error
 	//var resolutionIdentifier string // For logging: "AppID 'xyz'" or "hostname 'abc.com'"
 	//var originalHostForLog string = r.Host // Capture original host for logging before it's modified
@@ -146,7 +149,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Login endpoints
 
-	adminHost, err := p.GetServiceHost("18736e4f-93f9-4606-a7be-863c7986ea5b")
+	adminHost, err := p.GetServiceHost("MBtskI6D")
 	if err != nil {
 		http.Error(w, "Service not found for admin", http.StatusNotFound)
 		log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
@@ -163,6 +166,68 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/public/access_token" {
 		login.HandleAccessToken(w, r, adminHost)
+		return
+	}
+
+	// Look for an application ID in the path string
+	var instance *processes.AppInstance
+	var port int
+	var targetPath string
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) > 1 {
+		appID := parts[1]
+		if appID != "" {
+			instance, port, err = p.pm.GetAppInstanceByID(appID)
+			if err != nil {
+				http.Error(w, "Service not found for app ID "+appID, http.StatusNotFound)
+				log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
+				return
+			}
+			if instance == nil {
+				http.Error(w, "Service unavailable for app ID "+appID, http.StatusServiceUnavailable)
+				log.Printf("<%s> %s %s 404 [No active instances]", traceID, r.Host, r.URL.Path)
+				return
+			}
+			targetPath = r.URL.Path[len("/"+appID+"/"):]
+		}
+	}
+
+	if instance != nil {
+		// Validate authorization for API endpoints
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s %s => 401 [Missing token]", traceID, r.Host, r.URL.Path)
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		valid := token == p.internalSecret
+		if !valid {
+			valid = access.ValidateAccessToken(token, instance.InstanceID)
+		}
+		if !valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s %s => 401 [Invalid token]", traceID, r.Host, r.URL.Path)
+			return
+		}
+
+		// Token is valid, proxy the request
+		targetURL := &url.URL{
+			Scheme: "http", // Backend services are HTTP
+			Host:   "localhost:" + strconv.Itoa(port),
+		}
+
+		origPath := r.URL.Path
+		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+		reverseProxy.Transport = p.transport
+		r.Host = targetURL.Host
+		r.URL.Path = targetPath
+		r.Header.Add("X-Trace-ID", traceID)
+
+		log.Printf("<%s> %s %s => %s", traceID, r.Host, origPath, targetURL.String())
+		reverseProxy.ServeHTTP(w, r)
 		return
 	}
 
@@ -248,40 +313,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		// Handle /api/ paths with authorization
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			// Validate authorization for API endpoints
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				log.Printf("<%s> %s%s => 401 [Missing token]", traceID, resolutionIdentifier, r.URL.Path)
-				return
-			}
-
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-
-			valid := token == p.internalSecret
-			if !valid {
-				valid = access.ValidateAccessToken(token, instance.InstanceID)
-			}
-			if !valid {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				log.Printf("<%s> %s%s => 401 [Invalid token]", traceID, resolutionIdentifier, r.URL.Path)
-				return
-			}
-
-			// Token is valid, proxy the request
-			targetURL := &url.URL{
-				Scheme: "http", // Backend services are HTTP
-				Host:   "localhost:" + strconv.Itoa(port),
-			}
-
-			reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-			reverseProxy.Transport = p.transport
-			r.Host = targetURL.Host
-			r.Header.Add("X-Trace-ID", traceID)
-
-			log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
-			reverseProxy.ServeHTTP(w, r)
-			return
 		}
 
 		// Handle /internal/ paths

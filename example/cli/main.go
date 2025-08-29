@@ -22,7 +22,7 @@ func centerBox(contents tview.Primitive, width, height int) *tview.Flex {
 		AddItem(tview.NewBox(), 0, 1, false)
 }
 
-func createLoginPages(client *yesterdaygo.Client, pages *tview.Pages) {
+func createLoginPages(client *yesterdaygo.Client, pages *tview.Pages, mainPage *MainPage) {
 	// Create "logging in" page
 	var loggingInText = tview.NewTextView().
 		SetTextColor(tcell.ColorGreen).
@@ -56,11 +56,44 @@ func createLoginPages(client *yesterdaygo.Client, pages *tview.Pages) {
 			errorText.SetText(fmt.Sprintf("Error logging in: %s", err.Error()))
 			pages.SwitchToPage("LoginError")
 		} else {
+			mainPage.update()
 			pages.SwitchToPage("Main")
 		}
 	})
 
 	pages.AddPage("Login", centerBox(form, 35, 9), true, true)
+}
+
+type UserData struct {
+	ID       int    `db:"id" json:"id"`
+	Username string `db:"username" json:"username"`
+}
+
+type UsersData struct {
+	Users []UserData `json:"users"`
+}
+
+type MainPage struct {
+	provider *yesterdaygo.DataProvider[UsersData]
+	pages    *tview.Pages
+}
+
+func (m *MainPage) update() {
+	users, err := m.provider.Get()
+	if err != nil {
+		var errorText = tview.NewTextView().
+			SetTextColor(tcell.ColorRed).
+			SetTextAlign(tview.AlignCenter).
+			SetText(fmt.Sprintf("Error fetching users: %s", err.Error()))
+		errorText.SetBorder(true)
+		m.pages.AddPage("Main", errorText, true, true)
+	}
+
+	var usersList = tview.NewList().ShowSecondaryText(false)
+	for index, user := range users.Users {
+		usersList.AddItem(user.Username, fmt.Sprintf("ID %d", user.ID), rune(49+index), nil)
+	}
+	m.pages.AddPage("Main", usersList, true, true)
 }
 
 func main() {
@@ -75,11 +108,16 @@ func main() {
 
 	var app = tview.NewApplication()
 	var pages = tview.NewPages()
+	var mainPage = &MainPage{
+		provider: yesterdaygo.NewDataProvider[UsersData](client, "/MBtskI6D/api/users", map[string]interface{}{}),
+		pages:    pages,
+	}
 
 	pages.AddPage("Main", centerBox(tview.NewTextView().SetText("Welcome to Yesterday!"), 35, 9), true, true)
-	createLoginPages(client, pages)
+	createLoginPages(client, pages, mainPage)
 
 	if client.IsAuthenticated() {
+		mainPage.update()
 		pages.SwitchToPage("Main")
 	} else {
 		pages.SwitchToPage("Login")

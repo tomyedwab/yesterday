@@ -19,7 +19,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Internal login functionality, used by the login service
+	// Internal login functionality, called by nexushub directly
 	http.HandleFunc("/internal/dologin", handlers.HandleDoLogin)
 	http.HandleFunc("/internal/checkAccess", handlers.HandleCheckAccess)
 

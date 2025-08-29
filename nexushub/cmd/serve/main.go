@@ -39,9 +39,9 @@ func main() {
 	logger.Info("Starting NexusHub Process Manager")
 
 	packageManager := packages.NewPackageManager()
-	if !packageManager.IsInstalled("18736e4f-93f9-4606-a7be-863c7986ea5b") {
+	if !packageManager.IsInstalled("MBtskI6D") {
 		logger.Warn("Admin app not installed, installing...")
-		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__admin", "18736e4f-93f9-4606-a7be-863c7986ea5b"); err != nil {
+		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__admin", "MBtskI6D"); err != nil {
 			logger.Error("Failed to install admin app", "error", err)
 			os.Exit(1)
 		}
@@ -58,12 +58,12 @@ func main() {
 	// 2. Create AdminInstanceProvider with static instances for critical services
 	staticApps := []processes.StaticAppConfig{
 		{
-			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",
+			InstanceID: "MBtskI6D",
 			HostName:   "admin",
-			PkgPath:    filepath.Join(installDir, "18736e4f-93f9-4606-a7be-863c7986ea5b"),
+			PkgPath:    filepath.Join(installDir, "MBtskI6D"),
 		},
 	}
-	appProvider := processes.NewAdminInstanceProvider("18736e4f-93f9-4606-a7be-863c7986ea5b", internalSecret, installDir, staticApps)
+	appProvider := processes.NewAdminInstanceProvider("MBtskI6D", internalSecret, installDir, staticApps)
 
 	// 3. Initialize PortManager
 	portManager, err := processes.NewPortManager(10000, 19999)

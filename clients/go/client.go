@@ -20,9 +20,9 @@ type Client struct {
 	httpClient       *http.Client
 	refreshTokenPath string
 	accessToken      string
-	mu               sync.RWMutex    // Protects accessToken
-	eventPoller      *EventPoller    // Event polling system
-	eventPublisher   *EventPublisher // Event publishing system
+	mu               sync.RWMutex // Protects accessToken
+	//eventPoller      *EventPoller    // Event polling system
+	eventPublisher *EventPublisher // Event publishing system
 }
 
 // ClientOption represents a functional option for configuring the Client
@@ -71,7 +71,7 @@ func NewClient(baseURL string, options ...ClientOption) *Client {
 	}
 
 	// Initialize event poller and publisher
-	client.eventPoller = NewEventPoller(client)
+	//client.eventPoller = NewEventPoller(client)
 	client.eventPublisher = NewEventPublisher(client)
 
 	// Apply options
@@ -246,9 +246,9 @@ func (c *Client) Initialize(ctx context.Context) error {
 }
 
 // GetEventPoller returns the event polling system
-func (c *Client) GetEventPoller() *EventPoller {
-	return c.eventPoller
-}
+/*func (c *Client) GetEventPoller() *EventPoller {
+return c.eventPoller
+}*/
 
 // GetEventPublisher returns the event publishing system
 func (c *Client) GetEventPublisher() *EventPublisher {

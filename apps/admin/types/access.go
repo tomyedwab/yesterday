@@ -1,8 +1,7 @@
 package types
 
 type AccessRequest struct {
-	UserID        int
-	ApplicationID string
+	UserID int
 }
 
 type AccessResponse struct {

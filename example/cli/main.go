@@ -65,7 +65,7 @@ func createLoginPages(client *yesterdaygo.Client, pages *tview.Pages) {
 
 func main() {
 	client := yesterdaygo.NewClient(
-		"https://login.yesterday.localhost:8443",
+		"https://www.yesterday.localhost:8443",
 		yesterdaygo.WithRefreshTokenPath(path.Join(os.Getenv("HOME"), ".yesterday", "token")),
 	)
 	err := client.RefreshAccessToken(context.Background())

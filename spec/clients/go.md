@@ -13,8 +13,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Authentication Service - Handles username/password validation and session management
 
 ## Task `go-client-core-client`: Core Client Structure
-**Reference:** design/clients/go.md  
-**Implementation status:** Completed (2025-07-05)  
+**Reference:** design/clients/go.md
+**Implementation status:** Completed (2025-07-05)
 **Files:** `clients/go/client.go`, `clients/go/auth.go`, `clients/go/errors.go`, `clients/go/doc.go`
 
 **Details:**
@@ -28,8 +28,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Integrate TLS certificate handling for localhost domains (see `go-client-tls-config` task)
 
 ## Task `go-client-authentication`: Authentication and Session Management
-**Reference:** design/clients/go.md  
-**Implementation status:** Completed (2025-07-05)  
+**Reference:** design/clients/go.md
+**Implementation status:** Completed (2025-07-05)
 **Files:** `clients/go/auth.go`, `clients/go/client.go`
 
 **Details:**
@@ -43,15 +43,15 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Implement `RefreshAccessToken() error` helper method
   - Called at client initialization
   - Uses the refresh token stored in `refreshTokenPath` to get a new access token
-  - Calls /api/access_token with the refresh token in the YRT cookie header
+  - Calls /public/access_token with the refresh token in the YRT cookie header
   - Stores the new access token from the JSON response's 'access_token' field in memory
   - Falls back on username/password login if anything goes wrong
 - Implement `IsAuthenticated() bool` helper method
 - Add middleware for automatic authentication header injection in all authenticated requests using Bearer <access_token>
 
-## Task `go-client-event-polling`: Event Number Polling System  
-**Reference:** design/clients/go.md  
-**Implementation status:** Completed (2025-07-05)  
+## Task `go-client-event-polling`: Event Number Polling System
+**Reference:** design/clients/go.md
+**Implementation status:** Completed (2025-07-05)
 **Files:** `clients/go/events.go`, `clients/go/events_example_test.go`
 
 **Details:**
@@ -73,8 +73,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Ensure thread-safe access to event number and subscriber list with mutex protection
 
 ## Task `go-client-data-provider`: Generic Data Provider
-**Reference:** design/clients/go.md  
-**Implementation status:** Completed (2025-01-05)  
+**Reference:** design/clients/go.md
+**Implementation status:** Completed (2025-01-05)
 **Files:** `clients/go/provider.go`, `clients/go/provider_example_test.go`
 
 **Details:**
@@ -99,8 +99,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Ensure thread-safe access to cached data and metadata with RWMutex
 
 ## Task `go-client-event-publisher`: Generic Event Publishing Utility
-**Reference:** design/clients/go.md  
-**Implementation status:** Completed (2025-01-05)  
+**Reference:** design/clients/go.md
+**Implementation status:** Completed (2025-01-05)
 **Files:** `clients/go/publisher.go`, `clients/go/publisher_example_test.go`
 
 **Details:**
@@ -135,8 +135,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Ensure thread-safe queue operations with mutex protection
 
 ## Task `go-client-tls-config`: TLS Certificate Configuration
-**Reference:** design/clients/go.md  
-**Implementation status:** ✅ Completed (2025-07-09)  
+**Reference:** design/clients/go.md
+**Implementation status:** ✅ Completed (2025-07-09)
 **Files:** `clients/go/tls.go`, `clients/go/client.go`, `clients/go/tls_test.go`
 
 **Details:**
@@ -174,8 +174,8 @@ The implementation will reside in `clients/go/` and provide both synchronous and
 - Maintains backward compatibility - existing functionality unaffected
 
 ## Task `go-client-testing-utilities`: Testing Support and Mocks
-**Reference:** design/clients/go.md  
-**Implementation status:** ✅ Completed (2025-07-05)  
+**Reference:** design/clients/go.md
+**Implementation status:** ✅ Completed (2025-07-05)
 **Files:** `clients/go/testing.go`, `clients/go/testing_example_test.go`
 
 **Details:**

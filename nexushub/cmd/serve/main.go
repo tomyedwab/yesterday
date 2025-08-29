@@ -30,7 +30,7 @@ func main() {
 
 	internalSecret := uuid.New().String()
 	// TODO(tom) STOPSHIP temporary stopgap to make internal cross service requests work
-	os.Setenv("INTERNAL_SECRET", internalSecret)
+	//os.Setenv("INTERNAL_SECRET", internalSecret)
 
 	// 1. Setup logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -46,13 +46,6 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if !packageManager.IsInstalled("3bf3e3c0-6e51-482a-b180-00f6aa568ee9") {
-		logger.Warn("Login app not installed, installing...")
-		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__login", "3bf3e3c0-6e51-482a-b180-00f6aa568ee9"); err != nil {
-			logger.Error("Failed to install login app", "error", err)
-			os.Exit(1)
-		}
-	}
 
 	installDir := packageManager.GetInstallDir()
 
@@ -64,11 +57,6 @@ func main() {
 
 	// 2. Create AdminInstanceProvider with static instances for critical services
 	staticApps := []processes.StaticAppConfig{
-		{
-			InstanceID: "3bf3e3c0-6e51-482a-b180-00f6aa568ee9",
-			HostName:   "login",
-			PkgPath:    filepath.Join(installDir, "3bf3e3c0-6e51-482a-b180-00f6aa568ee9"),
-		},
 		{
 			InstanceID: "18736e4f-93f9-4606-a7be-863c7986ea5b",
 			HostName:   "admin",
@@ -180,7 +168,7 @@ func main() {
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
-	httpProxy = httpsproxy.NewProxy(proxyListenAddr, fmt.Sprintf("yesterday.localhost%s", proxyListenAddr), proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
+	httpProxy = httpsproxy.NewProxy(proxyListenAddr, fmt.Sprintf("www.yesterday.localhost%s", proxyListenAddr), proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
 
 	contextFn := func(_ net.Listener) context.Context {
 		return context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)

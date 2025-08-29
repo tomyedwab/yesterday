@@ -258,7 +258,6 @@ func (p *AdminInstanceProvider) convertToAppInstance(app Application) AppInstanc
 		InstanceID: app.InstanceID,
 		HostName:   app.HostName,
 		PkgPath:    filepath.Join(p.installDir, app.AppID),
-		DebugPort:  0, // Default 0, will be set by static config if available
 	}
 
 	// Apply static configuration overrides if they exist

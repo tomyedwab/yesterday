@@ -1,29 +1,28 @@
 package login
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	admin_types "github.com/tomyedwab/yesterday/apps/admin/types"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
-	"github.com/tomyedwab/yesterday/nexushub/processes"
 	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
-func HandleAccessToken(w http.ResponseWriter, r *http.Request, host string, instance *processes.AppInstance) {
+func HandleAccessToken(w http.ResponseWriter, r *http.Request, adminServiceHost string) {
 	sessionManager := r.Context().Value(sessions.SessionManagerKey).(*sessions.SessionManager)
 
 	// Get refresh token from cookie
 	refreshToken, err := r.Cookie("YRT")
 	if err != nil {
 		// There is no refresh token cookie, redirect to login page
-		// TODO(tom) STOPSHIP this is not going to be correct in general
 		respJson, _ := json.Marshal(map[string]string{
-			"error":     "missing refresh token",
-			"login_url": fmt.Sprintf("https://login.%s/", host),
+			"error": "missing refresh token",
 		})
 		w.WriteHeader(http.StatusOK)
 		w.Write(respJson)
@@ -33,24 +32,33 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, host string, inst
 	session, err := sessionManager.GetSessionByRefreshToken(refreshToken.Value)
 	if err != nil || session == nil {
 		// Invalid refresh token, redirect to login page
-		// TODO(tom) STOPSHIP this is not going to be correct in general
 		respJson, _ := json.Marshal(map[string]string{
-			"error":     "refresh token not found",
-			"login_url": fmt.Sprintf("https://login.%s/", host),
+			"error": "refresh token not found",
 		})
 		w.WriteHeader(http.StatusOK)
 		w.Write(respJson)
 		return
 	}
 
-	accessRequestJson, _ := json.Marshal(&admin_types.AccessRequest{
-		UserID:        session.UserID,
-		ApplicationID: instance.InstanceID,
+	body, _ := json.Marshal(&admin_types.AccessRequest{
+		UserID: session.UserID,
 	})
 	var accessResponse admin_types.AccessResponse
-	statusCode, err := httputils.CrossServiceRequest("/internal/checkAccess", "18736e4f-93f9-4606-a7be-863c7986ea5b", accessRequestJson, &accessResponse)
-	if err != nil || statusCode != http.StatusOK {
-		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), statusCode)
+	resp, err := http.Post(adminServiceHost+"/internal/checkAccess", "application/json", io.NopCloser(bytes.NewReader([]byte(body))))
+	if err != nil {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), resp.StatusCode)
+		return
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&accessResponse)
+	if err != nil {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), http.StatusInternalServerError)
 		return
 	}
 	if !accessResponse.AccessGranted {
@@ -58,7 +66,7 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, host string, inst
 		return
 	}
 
-	response, err := sessionManager.CreateAccessToken(session, instance.InstanceID)
+	response, err := sessionManager.CreateAccessToken(session)
 	if err != nil {
 		httputils.HandleAPIResponse(w, r, nil, err, http.StatusUnauthorized)
 		return

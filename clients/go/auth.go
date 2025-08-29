@@ -127,7 +127,7 @@ func (c *Client) RefreshAccessToken(ctx context.Context) error {
 		return NewAuthenticationError("no refresh token available")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/api/access_token", nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/public/access_token", nil)
 	if err != nil {
 		return NewErrorWithCause(ErrorTypeNetwork, "failed to create access token request", err)
 	}

@@ -1,6 +1,8 @@
 package login
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,17 +14,29 @@ import (
 	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
-func HandleLogin(w http.ResponseWriter, r *http.Request) {
+func HandleLogin(w http.ResponseWriter, r *http.Request, adminServiceHost string) {
 	sessionManager := r.Context().Value(sessions.SessionManagerKey).(*sessions.SessionManager)
 	var err error
 	body, _ := io.ReadAll(r.Body)
 
-	// Make a cross-service request to the admin service to verify the
-	// credentials before creating a new session.
+	// Make a service request to the admin service to verify the credentials
+	// before creating a new session.
 	var loginResponse types.AdminLoginResponse
-	statusCode, err := httputils.CrossServiceRequest("/internal/dologin", "18736e4f-93f9-4606-a7be-863c7986ea5b", body, &loginResponse)
+	resp, err := http.Post(adminServiceHost+"/internal/dologin", "application/json", io.NopCloser(bytes.NewReader([]byte(body))))
 	if err != nil {
-		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), statusCode)
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), resp.StatusCode)
+		return
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&loginResponse)
+	if err != nil {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), http.StatusInternalServerError)
 		return
 	}
 

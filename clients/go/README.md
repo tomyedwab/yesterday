@@ -16,26 +16,26 @@ package main
 import (
     "context"
     "log"
-    
+
     yesterdaygo "github.com/tomyedwab/yesterday/clients/go"
 )
 
 func main() {
     // Create client
     client := yesterdaygo.NewClient("https://api.yesterday.localhost")
-    
+
     // Initialize (attempt to refresh existing tokens)
     ctx := context.Background()
     if err := client.Initialize(ctx); err != nil {
         log.Printf("Warning: %v", err)
     }
-    
+
     // Login
     if err := client.Login(ctx, "username", "password"); err != nil {
         log.Fatal(err)
     }
     defer client.Logout(ctx)
-    
+
     // Client is now authenticated and ready to use
     log.Println("Successfully authenticated!")
 }
@@ -110,7 +110,7 @@ if err := client.Login(ctx, username, password); err != nil {
 
 2. **Token Refresh**: Automatic access token management
    - Uses stored refresh token to get access tokens
-   - Sends POST to `/api/access_token` with YRT cookie
+   - Sends POST to `/public/access_token` with YRT cookie
    - Stores access token in memory
 
 3. **Authenticated Requests**: Automatic authentication headers
@@ -365,7 +365,7 @@ publisher.Stop()
 ### Event Publisher API Methods
 
 ```go
-// Core methods  
+// Core methods
 NewEventPublisher(client, options...) *EventPublisher
 publisher.PublishEvent(eventType string, payload interface{}) error
 publisher.FlushEvents(timeout time.Duration) error
@@ -377,7 +377,7 @@ publisher.GetQueueLength() int
 
 // Configuration options
 WithRetryBackoff(backoff time.Duration) PublisherOption
-WithMaxRetries(maxRetries int) PublisherOption  
+WithMaxRetries(maxRetries int) PublisherOption
 WithBatchSize(batchSize int) PublisherOption
 ```
 
@@ -420,7 +420,7 @@ import (
 func TestYourApplication(t *testing.T) {
     // Create mock client
     client := yesterdaygo.NewMockClient()
-    
+
     // Configure mock responses
     client.SetMockResponse("/public/login", 200, nil)
     client.SetMockResponse("/api/users", 200, map[string]interface{}{
@@ -429,13 +429,13 @@ func TestYourApplication(t *testing.T) {
             {"id": 2, "name": "Bob"},
         },
     })
-    
+
     // Test your application logic
     err := client.Login(ctx, "testuser", "password")
     if err != nil {
         t.Errorf("Login failed: %v", err)
     }
-    
+
     // Verify requests were made
     yesterdaygo.AssertAuthenticationCalled(t, client)
     yesterdaygo.AssertRequestCount(t, client, 1)
@@ -448,23 +448,23 @@ func TestYourApplication(t *testing.T) {
 func TestEventHandling(t *testing.T) {
     client := yesterdaygo.NewMockClient()
     poller := client.GetMockEventPoller()
-    
+
     // Start polling
     err := poller.StartEventPolling(100 * time.Millisecond)
     if err != nil {
         t.Fatalf("Failed to start polling: %v", err)
     }
-    
+
     // Subscribe to events
     eventCh := poller.SubscribeToEvents()
-    
+
     // Trigger test events
     go func() {
         time.Sleep(10 * time.Millisecond)
         poller.TriggerEvent(100)
         poller.TriggerEvent(101)
     }()
-    
+
     // Verify events are received
     select {
     case eventNum := <-eventCh:
@@ -474,7 +474,7 @@ func TestEventHandling(t *testing.T) {
     case <-time.After(200 * time.Millisecond):
         t.Error("Timeout waiting for event")
     }
-    
+
     yesterdaygo.AssertEventPollingStarted(t, poller)
 }
 ```
@@ -485,16 +485,16 @@ func TestEventHandling(t *testing.T) {
 func TestEventPublishing(t *testing.T) {
     client := yesterdaygo.NewMockClient()
     publisher := client.GetMockEventPublisher()
-    
+
     // Publish test events
     err := publisher.PublishEvent("user.created", map[string]string{"id": "123"})
     if err != nil {
         t.Fatalf("Failed to publish event: %v", err)
     }
-    
+
     // Verify events were published
     yesterdaygo.AssertEventPublished(t, publisher, "user.created")
-    
+
     // Check published events
     events := publisher.GetPublishedEvents()
     if len(events) != 1 {
@@ -510,23 +510,23 @@ Use the built-in test data builders to create consistent mock responses:
 ```go
 func TestWithBuilders(t *testing.T) {
     client := yesterdaygo.NewMockClient()
-    
+
     // Build login response with refresh token
     loginResp := yesterdaygo.NewLoginResponse().
         WithStatus(200).
         WithRefreshToken("test-refresh-token").
         Build()
-    
+
     client.SetMockResponse("/public/login", loginResp.StatusCode, loginResp.Body)
     client.SetMockHeaders("/public/login", loginResp.Headers)
-    
+
     // Build access token response
     tokenResp := yesterdaygo.NewAccessTokenResponse().
         WithAccessToken("test-access-token").
         Build()
-    
-    client.SetMockResponse("/api/access_token", tokenResp.StatusCode, tokenResp.Body)
-    
+
+    client.SetMockResponse("/public/access_token", tokenResp.StatusCode, tokenResp.Body)
+
     // Test authentication flow
     ctx := context.Background()
     err := client.Login(ctx, "testuser", "password")
@@ -566,24 +566,24 @@ func TestIntegration(t *testing.T) {
     if testing.Short() {
         t.Skip("Skipping integration test in short mode")
     }
-    
+
     config := yesterdaygo.NewIntegrationTestConfig()
     config.BaseURL = "http://localhost:8080"
     config.Username = "testuser"
     config.Password = "testpass"
-    
+
     client, err := yesterdaygo.CreateIntegrationTestClient(config)
     if err != nil {
         t.Fatalf("Failed to create integration test client: %v", err)
     }
-    
+
     // Test against real API
     ctx := context.Background()
     resp, err := client.Get(ctx, "/api/status", nil)
     if err != nil {
         t.Errorf("Status check failed: %v", err)
     }
-    
+
     if resp.StatusCode != 200 {
         t.Errorf("Expected status 200, got %d", resp.StatusCode)
     }

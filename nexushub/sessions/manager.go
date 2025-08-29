@@ -66,7 +66,6 @@ func (m *SessionManager) CreateSession(userID int) (*Session, error) {
 }
 
 func (m *SessionManager) GetSessionByRefreshToken(refreshToken string) (*Session, error) {
-	log.Printf("Getting session by refresh token: %s", refreshToken) // donotcheckin
 	session, err := DBGetSessionByRefreshToken(m.db, refreshToken)
 	if err != nil {
 		return nil, err
@@ -85,7 +84,7 @@ func (m *SessionManager) DeleteExpiredSessions() error {
 
 // GetAccessToken creates a new access token which is stored in-memory in
 // NexusHub, and rotates the refresh token in the database.
-func (m *SessionManager) CreateAccessToken(session *Session, applicationID string) (*types.AccessTokenResponse, error) {
+func (m *SessionManager) CreateAccessToken(session *Session) (*types.AccessTokenResponse, error) {
 	if time.Since(time.Unix(int64(session.LastRefreshed), 0)) > m.sessionExpiry {
 		session.DBDelete(m.db)
 		return nil, ErrSessionExpired
@@ -101,9 +100,8 @@ func (m *SessionManager) CreateAccessToken(session *Session, applicationID strin
 	}
 
 	return &types.AccessTokenResponse{
-		Expiry:        expiresAt,
-		RefreshToken:  refreshToken,
-		AccessToken:   uuid.New().String(),
-		ApplicationID: applicationID,
+		Expiry:       expiresAt,
+		RefreshToken: refreshToken,
+		AccessToken:  uuid.New().String(),
 	}, nil
 }

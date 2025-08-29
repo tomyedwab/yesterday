@@ -309,7 +309,6 @@ func (h *DebugHandler) startDebugApplicationInstance(debugApp *DebugApplication,
 		InstanceID: debugApp.ID,
 		HostName:   debugApp.HostName,
 		PkgPath:    appInstancePath,
-		DebugPort:  0, // Not used for debug instances
 	}
 
 	// Add the instance to the provider

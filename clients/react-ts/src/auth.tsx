@@ -1,5 +1,5 @@
 let accessToken: string | null = null;
-let refreshUrl: string = "/api/access_token";
+let refreshUrl: string = "/public/access_token";
 
 async function refreshAccessToken() {
   const response = await fetch(refreshUrl, {

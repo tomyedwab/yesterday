@@ -29,13 +29,13 @@ type MockResponse struct {
 
 // MockClient implements the same interface as Client for testing purposes
 type MockClient struct {
-	baseURL          string
-	authenticated    bool
-	responses        map[string]*MockResponse
-	requestHistory   []MockRequest
-	mu               sync.RWMutex
-	eventPoller      *MockEventPoller
-	eventPublisher   *MockEventPublisher
+	baseURL        string
+	authenticated  bool
+	responses      map[string]*MockResponse
+	requestHistory []MockRequest
+	mu             sync.RWMutex
+	eventPoller    *MockEventPoller
+	eventPublisher *MockEventPublisher
 }
 
 // NewMockClient creates a new mock client instance for testing
@@ -45,10 +45,10 @@ func NewMockClient() *MockClient {
 		responses:      make(map[string]*MockResponse),
 		requestHistory: make([]MockRequest, 0),
 	}
-	
+
 	client.eventPoller = NewMockEventPoller(client)
 	client.eventPublisher = NewMockEventPublisher(client)
-	
+
 	return client
 }
 
@@ -56,7 +56,7 @@ func NewMockClient() *MockClient {
 func (m *MockClient) SetMockResponse(uri string, statusCode int, response interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.responses[uri] = &MockResponse{
 		StatusCode: statusCode,
 		Body:       response,
@@ -68,7 +68,7 @@ func (m *MockClient) SetMockResponse(uri string, statusCode int, response interf
 func (m *MockClient) SetMockError(uri string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.responses[uri] = &MockResponse{
 		Error: err,
 	}
@@ -78,7 +78,7 @@ func (m *MockClient) SetMockError(uri string, err error) {
 func (m *MockClient) SetMockHeaders(uri string, headers map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if resp, exists := m.responses[uri]; exists {
 		resp.Headers = headers
 	}
@@ -88,7 +88,7 @@ func (m *MockClient) SetMockHeaders(uri string, headers map[string]string) {
 func (m *MockClient) GetRequestHistory() []MockRequest {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	history := make([]MockRequest, len(m.requestHistory))
 	copy(history, m.requestHistory)
@@ -99,7 +99,7 @@ func (m *MockClient) GetRequestHistory() []MockRequest {
 func (m *MockClient) ClearRequestHistory() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.requestHistory = make([]MockRequest, 0)
 }
 
@@ -107,7 +107,7 @@ func (m *MockClient) ClearRequestHistory() {
 func (m *MockClient) SetAuthenticated(authenticated bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.authenticated = authenticated
 }
 
@@ -115,7 +115,7 @@ func (m *MockClient) SetAuthenticated(authenticated bool) {
 func (m *MockClient) recordRequest(method, path string, body interface{}, headers map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.requestHistory = append(m.requestHistory, MockRequest{
 		Method:  method,
 		Path:    path,
@@ -128,7 +128,7 @@ func (m *MockClient) recordRequest(method, path string, body interface{}, header
 func (m *MockClient) getMockResponse(uri string) *MockResponse {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	return m.responses[uri]
 }
 
@@ -152,7 +152,7 @@ func (m *MockClient) GetRefreshTokenPath() string {
 // makeRequest simulates an HTTP request and returns the configured mock response
 func (m *MockClient) makeRequest(ctx context.Context, method, path string, body interface{}, headers map[string]string) (*http.Response, error) {
 	m.recordRequest(method, path, body, headers)
-	
+
 	mockResp := m.getMockResponse(path)
 	if mockResp == nil {
 		// Default response if no mock configured
@@ -160,19 +160,19 @@ func (m *MockClient) makeRequest(ctx context.Context, method, path string, body 
 		recorder.WriteHeader(200)
 		return recorder.Result(), nil
 	}
-	
+
 	if mockResp.Error != nil {
 		return nil, mockResp.Error
 	}
-	
+
 	// Create a mock HTTP response
 	recorder := httptest.NewRecorder()
-	
+
 	// Set headers
 	for key, value := range mockResp.Headers {
 		recorder.Header().Set(key, value)
 	}
-	
+
 	// Set status code and body
 	recorder.WriteHeader(mockResp.StatusCode)
 	if mockResp.Body != nil {
@@ -180,7 +180,7 @@ func (m *MockClient) makeRequest(ctx context.Context, method, path string, body 
 			recorder.Write(bodyBytes)
 		}
 	}
-	
+
 	return recorder.Result(), nil
 }
 
@@ -207,12 +207,12 @@ func (m *MockClient) Delete(ctx context.Context, path string, headers map[string
 // Login simulates user authentication
 func (m *MockClient) Login(ctx context.Context, username, password string) error {
 	m.recordRequest("POST", "/public/login", LoginRequest{Username: username, Password: password}, nil)
-	
+
 	mockResp := m.getMockResponse("/public/login")
 	if mockResp != nil && mockResp.Error != nil {
 		return mockResp.Error
 	}
-	
+
 	m.SetAuthenticated(true)
 	return nil
 }
@@ -220,25 +220,25 @@ func (m *MockClient) Login(ctx context.Context, username, password string) error
 // Logout simulates session termination
 func (m *MockClient) Logout(ctx context.Context) error {
 	m.recordRequest("POST", "/public/logout", nil, nil)
-	
+
 	mockResp := m.getMockResponse("/public/logout")
 	if mockResp != nil && mockResp.Error != nil {
 		return mockResp.Error
 	}
-	
+
 	m.SetAuthenticated(false)
 	return nil
 }
 
 // RefreshAccessToken simulates access token refresh
 func (m *MockClient) RefreshAccessToken(ctx context.Context) error {
-	m.recordRequest("POST", "/api/access_token", nil, nil)
-	
-	mockResp := m.getMockResponse("/api/access_token")
+	m.recordRequest("POST", "/public/access_token", nil, nil)
+
+	mockResp := m.getMockResponse("/public/access_token")
 	if mockResp != nil && mockResp.Error != nil {
 		return mockResp.Error
 	}
-	
+
 	return nil
 }
 
@@ -278,11 +278,11 @@ func (m *MockClient) GetMockEventPublisher() *MockEventPublisher {
 
 // MockEventPoller provides controllable event polling for testing
 type MockEventPoller struct {
-	client              interface{} // MockClient reference
-	currentEventNumber  int64
-	subscribers         []chan int64
-	running             bool
-	mu                  sync.RWMutex
+	client             interface{} // MockClient reference
+	currentEventNumber int64
+	subscribers        []chan int64
+	running            bool
+	mu                 sync.RWMutex
 }
 
 // NewMockEventPoller creates a new mock event poller
@@ -297,7 +297,7 @@ func NewMockEventPoller(client interface{}) *MockEventPoller {
 func (m *MockEventPoller) StartEventPolling(interval time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.running = true
 	return nil
 }
@@ -306,9 +306,9 @@ func (m *MockEventPoller) StartEventPolling(interval time.Duration) error {
 func (m *MockEventPoller) StopEventPolling() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.running = false
-	
+
 	// Close all subscriber channels
 	for _, ch := range m.subscribers {
 		close(ch)
@@ -320,7 +320,7 @@ func (m *MockEventPoller) StopEventPolling() {
 func (m *MockEventPoller) SubscribeToEvents() <-chan int64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	ch := make(chan int64, 10)
 	m.subscribers = append(m.subscribers, ch)
 	return ch
@@ -330,9 +330,9 @@ func (m *MockEventPoller) SubscribeToEvents() <-chan int64 {
 func (m *MockEventPoller) TriggerEvent(eventNumber int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.currentEventNumber = eventNumber
-	
+
 	// Notify all subscribers
 	for _, ch := range m.subscribers {
 		select {
@@ -375,10 +375,10 @@ func (m *MockEventPoller) SetPollInterval(interval time.Duration) {
 
 // MockEventPublisher provides controllable event publishing for testing
 type MockEventPublisher struct {
-	client         interface{} // MockClient reference
+	client          interface{} // MockClient reference
 	publishedEvents []MockPublishedEvent
-	running        bool
-	mu             sync.RWMutex
+	running         bool
+	mu              sync.RWMutex
 }
 
 // MockPublishedEvent represents an event that was published during testing
@@ -401,13 +401,13 @@ func NewMockEventPublisher(client interface{}) *MockEventPublisher {
 func (m *MockEventPublisher) PublishEvent(eventType string, payload interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.publishedEvents = append(m.publishedEvents, MockPublishedEvent{
 		EventType: eventType,
 		Payload:   payload,
 		Timestamp: time.Now(),
 	})
-	
+
 	return nil
 }
 
@@ -421,7 +421,7 @@ func (m *MockEventPublisher) FlushEvents(timeout time.Duration) error {
 func (m *MockEventPublisher) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.running = false
 }
 
@@ -441,7 +441,7 @@ func (m *MockEventPublisher) GetQueueLength() int {
 func (m *MockEventPublisher) GetPublishedEvents() []MockPublishedEvent {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	events := make([]MockPublishedEvent, len(m.publishedEvents))
 	copy(events, m.publishedEvents)
@@ -452,7 +452,7 @@ func (m *MockEventPublisher) GetPublishedEvents() []MockPublishedEvent {
 func (m *MockEventPublisher) ClearPublishedEvents() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.publishedEvents = make([]MockPublishedEvent, 0)
 }
 
@@ -461,21 +461,21 @@ func (m *MockEventPublisher) ClearPublishedEvents() {
 // AssertRequestMade verifies that a request was made to the specified URI
 func AssertRequestMade(t *testing.T, client *MockClient, method, uri string) {
 	t.Helper()
-	
+
 	history := client.GetRequestHistory()
 	for _, req := range history {
 		if req.Method == method && req.Path == uri {
 			return // Request found
 		}
 	}
-	
+
 	t.Errorf("Expected %s request to %s was not made. Request history: %+v", method, uri, history)
 }
 
 // AssertRequestCount verifies the total number of requests made
 func AssertRequestCount(t *testing.T, client *MockClient, expectedCount int) {
 	t.Helper()
-	
+
 	history := client.GetRequestHistory()
 	if len(history) != expectedCount {
 		t.Errorf("Expected %d requests, but got %d. Request history: %+v", expectedCount, len(history), history)
@@ -491,7 +491,7 @@ func AssertAuthenticationCalled(t *testing.T, client *MockClient) {
 // AssertEventPollingStarted verifies that event polling was started
 func AssertEventPollingStarted(t *testing.T, poller *MockEventPoller) {
 	t.Helper()
-	
+
 	if !poller.IsRunning() {
 		t.Error("Expected event polling to be started, but it is not running")
 	}
@@ -500,21 +500,21 @@ func AssertEventPollingStarted(t *testing.T, poller *MockEventPoller) {
 // AssertEventPublished verifies that an event was published
 func AssertEventPublished(t *testing.T, publisher *MockEventPublisher, eventType string) {
 	t.Helper()
-	
+
 	events := publisher.GetPublishedEvents()
 	for _, event := range events {
 		if event.EventType == eventType {
 			return // Event found
 		}
 	}
-	
+
 	t.Errorf("Expected event type '%s' to be published, but it was not found in: %+v", eventType, events)
 }
 
 // AssertEventPublishedWithPayload verifies that an event was published with specific payload
 func AssertEventPublishedWithPayload(t *testing.T, publisher *MockEventPublisher, eventType string, expectedPayload interface{}) {
 	t.Helper()
-	
+
 	events := publisher.GetPublishedEvents()
 	for _, event := range events {
 		if event.EventType == eventType {
@@ -523,14 +523,14 @@ func AssertEventPublishedWithPayload(t *testing.T, publisher *MockEventPublisher
 			}
 		}
 	}
-	
+
 	t.Errorf("Expected event type '%s' with payload '%v' to be published, but it was not found in: %+v", eventType, expectedPayload, events)
 }
 
 // AssertNoErrors is a helper to check that no errors occurred
 func AssertNoErrors(t *testing.T, errs []error) {
 	t.Helper()
-	
+
 	for _, err := range errs {
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
@@ -664,11 +664,11 @@ func (b *APIResponseBuilder) Build() *MockResponse {
 
 // IntegrationTestConfig holds configuration for integration tests
 type IntegrationTestConfig struct {
-	BaseURL    string
-	Username   string
-	Password   string
-	SkipLogin  bool
-	Timeout    time.Duration
+	BaseURL   string
+	Username  string
+	Password  string
+	SkipLogin bool
+	Timeout   time.Duration
 }
 
 // NewIntegrationTestConfig creates a new integration test configuration
@@ -682,33 +682,33 @@ func NewIntegrationTestConfig() *IntegrationTestConfig {
 // CreateIntegrationTestClient creates a real client for integration testing
 func CreateIntegrationTestClient(config *IntegrationTestConfig) (*Client, error) {
 	client := NewClient(config.BaseURL)
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), config.Timeout)
 	defer cancel()
-	
+
 	if err := client.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize client: %w", err)
 	}
-	
+
 	if !config.SkipLogin && config.Username != "" && config.Password != "" {
 		if err := client.Login(ctx, config.Username, config.Password); err != nil {
 			return nil, fmt.Errorf("failed to login: %w", err)
 		}
 	}
-	
+
 	return client, nil
 }
 
 // WaitForEventCondition waits for a specific condition on event numbers
 func WaitForEventCondition(t *testing.T, poller *MockEventPoller, condition func(int64) bool, timeout time.Duration) {
 	t.Helper()
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	
+
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():

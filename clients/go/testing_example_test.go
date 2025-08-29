@@ -18,7 +18,7 @@ func ExampleMockClient_basic() {
 
 	// Configure mock responses
 	client.SetMockResponse("/public/login", http.StatusOK, nil)
-	client.SetMockResponse("/api/access_token", http.StatusOK, 
+	client.SetMockResponse("/public/access_token", http.StatusOK,
 		yesterdaygo.AccessTokenResponse{AccessToken: "mock-token"})
 
 	// Perform operations
@@ -122,7 +122,7 @@ func TestMockClientBasicOperations(t *testing.T) {
 
 	// Test successful login
 	client.SetMockResponse("/public/login", http.StatusOK, nil)
-	
+
 	ctx := context.Background()
 	err := client.Login(ctx, "testuser", "password")
 	if err != nil {
@@ -267,7 +267,7 @@ func TestDataBuilders(t *testing.T) {
 		WithAccessToken("test-access-token").
 		Build()
 
-	client.SetMockResponse("/api/access_token", tokenResp.StatusCode, tokenResp.Body)
+	client.SetMockResponse("/public/access_token", tokenResp.StatusCode, tokenResp.Body)
 
 	// Test the configured responses
 	ctx := context.Background()
@@ -283,7 +283,7 @@ func TestDataBuilders(t *testing.T) {
 
 	// Verify authentication flow worked
 	yesterdaygo.AssertRequestMade(t, client, "POST", "/public/login")
-	yesterdaygo.AssertRequestMade(t, client, "POST", "/api/access_token")
+	yesterdaygo.AssertRequestMade(t, client, "POST", "/public/access_token")
 }
 
 // TestAPIResponseBuilder demonstrates generic API response building

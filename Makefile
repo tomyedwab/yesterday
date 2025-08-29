@@ -8,11 +8,6 @@ clean: PHONY
 
 build: clean
 	mkdir -p build/pkg
-	# Build login app
-	mkdir -p build/login/bin
-	go build -o build/login/bin/app apps/login/main.go
-	cp -R apps/login/web build/login/static
-	(cd build/login && zip -r ../pkg/github_com__tomyedwab__yesterday__apps__login.zip .)
 	# Build admin app
 	mkdir -p build/admin/bin
 	mkdir -p build/admin/static

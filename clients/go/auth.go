@@ -47,7 +47,7 @@ func (c *Client) Login(ctx context.Context, username, password string) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.GetHTTPClient().Do(req)
 	if err != nil {
 		return NewNetworkError("login request failed", err)
 	}
@@ -99,7 +99,7 @@ func (c *Client) Logout(ctx context.Context) error {
 		})
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.GetHTTPClient().Do(req)
 	if err != nil {
 		return NewNetworkError("logout request failed", err)
 	}
@@ -138,7 +138,7 @@ func (c *Client) RefreshAccessToken(ctx context.Context) error {
 		Value: refreshToken,
 	})
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.GetHTTPClient().Do(req)
 	if err != nil {
 		return NewNetworkError("access token request failed", err)
 	}

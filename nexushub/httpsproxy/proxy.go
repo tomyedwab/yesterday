@@ -20,6 +20,7 @@ import (
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers"
+	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/events"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/login"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
@@ -158,14 +159,24 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/public/login" {
 		login.HandleLogin(w, r, adminHost)
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 	if r.URL.Path == "/public/logout" {
 		login.HandleLogout(w, r)
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 	if r.URL.Path == "/public/access_token" {
 		login.HandleAccessToken(w, r, adminHost)
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
+		return
+	}
+
+	// Event endpoints
+	if r.URL.Path == "/events/publish" {
+		events.HandleEventPublish(w, r)
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 

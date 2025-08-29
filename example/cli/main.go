@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path"
 
@@ -73,6 +74,13 @@ type UsersData struct {
 	Users []UserData `json:"users"`
 }
 
+type CreateUserPublishData struct {
+	yesterdaygo.EventPublishData
+	Username     string `json:"username"`
+	Salt         string `json:"salt"`
+	PasswordHash string `json:"passwordHash"`
+}
+
 type MainPage struct {
 	provider *yesterdaygo.DataProvider[UsersData]
 	pages    *tview.Pages
@@ -97,11 +105,18 @@ func (m *MainPage) update() {
 }
 
 func main() {
+	logOutput, err := os.OpenFile(path.Join(os.Getenv("HOME"), ".yesterday", "example.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	client := yesterdaygo.NewClient(
 		"https://www.yesterday.localhost:8443",
 		yesterdaygo.WithRefreshTokenPath(path.Join(os.Getenv("HOME"), ".yesterday", "token")),
+		yesterdaygo.WithLogger(log.New(logOutput, "yesterday-cli: ", log.LstdFlags)),
 	)
-	err := client.RefreshAccessToken(context.Background())
+
+	err = client.RefreshAccessToken(context.Background())
 	if err != nil {
 		fmt.Println("Error refreshing access token:", err)
 	}
@@ -125,7 +140,23 @@ func main() {
 
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Rune() == 113 {
+			// "q" quits
+			// TODO(tom) STOPSHIP make a proper UI affordance
 			app.Stop()
+			return event
+		}
+		if event.Rune() == 99 {
+			// "c" creates a new user
+			// TODO(tom) STOPSHIP make a proper UI affordance
+			clientId := yesterdaygo.GenerateClientID()
+			client.GetEventPublisher().PublishEvent(clientId, CreateUserPublishData{
+				EventPublishData: yesterdaygo.EventPublishData{
+					ClientID: clientId,
+				},
+				Username:     "tom",
+				Salt:         "salt",
+				PasswordHash: "password_hash",
+			})
 		}
 		return event
 	})

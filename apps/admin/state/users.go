@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/tomyedwab/yesterday/applib/events"
 )
 
 type User struct {
@@ -22,6 +21,7 @@ const UpdateUserPasswordEventType string = "UpdateUserPassword"
 const DeleteUserEventType string = "DeleteUser"
 const UpdateUserEventType string = "UpdateUser"
 
+/* TODO STOPSHIP
 type UserAddedEvent struct {
 	events.GenericEvent
 	Username string `json:"username"`
@@ -44,6 +44,7 @@ type UpdateUserEvent struct {
 	UserID   int    `json:"user_id"`
 	Username string `json:"username"`
 }
+*/
 
 // -- DB Helpers --
 
@@ -55,7 +56,7 @@ func GetUser(db *sqlx.DB, username string) (*User, error) {
 
 // -- Event handlers --
 
-func UsersHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) {
+func InitUsers(tx *sqlx.Tx) error {
 	// Generate a random salt for the admin user
 	salt := uuid.New().String()
 	hasher := sha256.New()
@@ -71,13 +72,13 @@ func UsersHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) 
 			password_hash TEXT NOT NULL
 		)`)
 	if err != nil {
-		return false, fmt.Errorf("failed to create users table: %w", err)
+		return fmt.Errorf("failed to create users table: %w", err)
 	}
 
 	// Create indexes for better performance
 	_, err = tx.Exec(`CREATE INDEX idx_users_username ON users_v1(username)`)
 	if err != nil {
-		return false, fmt.Errorf("failed to create users username index: %w", err)
+		return fmt.Errorf("failed to create users username index: %w", err)
 	}
 
 	// Create admin user
@@ -86,13 +87,14 @@ func UsersHandleInitEvent(tx *sqlx.Tx, event *events.DBInitEvent) (bool, error) 
 		SELECT 'admin', $1, $2
 		`, salt, passwordHash)
 	if err != nil {
-		return false, fmt.Errorf("failed to create admin user: %w", err)
+		return fmt.Errorf("failed to create admin user: %w", err)
 	}
 
 	fmt.Println("User tables initialized.")
-	return true, nil
+	return nil
 }
 
+/*
 func UsersHandleAddedEvent(tx *sqlx.Tx, event *UserAddedEvent) (bool, error) {
 	fmt.Printf("Adding user: %s\n", event.Username)
 	// Create random salt
@@ -200,6 +202,7 @@ func UsersHandleUpdateEvent(tx *sqlx.Tx, event *UpdateUserEvent) (bool, error) {
 
 	return true, nil
 }
+*/
 
 // -- Getters --
 

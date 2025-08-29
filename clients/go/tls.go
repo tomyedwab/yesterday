@@ -16,7 +16,7 @@ import (
 // configureTLSForLocalhost configures TLS settings for localhost domains
 // Returns a custom TLS config if the baseURL is a localhost domain and certificates are found,
 // otherwise returns nil to use default TLS settings
-func configureTLSForLocalhost(baseURL string) (*tls.Config, error) {
+func configureTLSForLocalhost(baseURL string, log *log.Logger) (*tls.Config, error) {
 	// Parse the base URL to extract hostname
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
@@ -37,7 +37,7 @@ func configureTLSForLocalhost(baseURL string) (*tls.Config, error) {
 	}
 
 	// Load certificates from the specified directory
-	caCertPool, err := loadCertificatesFromDir(certsDir)
+	caCertPool, err := loadCertificatesFromDir(certsDir, log)
 	if err != nil {
 		log.Printf("Failed to load certificates from %s: %v", certsDir, err)
 		return nil, nil // Fall back to default TLS verification
@@ -60,16 +60,18 @@ func configureTLSForLocalhost(baseURL string) (*tls.Config, error) {
 
 // loadCertificatesFromDir loads all certificate files from the specified directory
 // and returns a certificate pool, or nil if no certificates are found
-func loadCertificatesFromDir(certsDir string) (*x509.CertPool, error) {
+func loadCertificatesFromDir(certsDir string, log *log.Logger) (*x509.CertPool, error) {
 	// Check if directory exists
 	if _, err := os.Stat(certsDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("certificates directory does not exist: %s", certsDir)
+		log.Printf("certificates directory does not exist: %s", certsDir)
+		return nil, err
 	}
 
 	// Read directory contents
 	files, err := ioutil.ReadDir(certsDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read certificates directory: %w", err)
+		log.Printf("failed to read certificates directory: %w", err)
+		return nil, err
 	}
 
 	// Create certificate pool

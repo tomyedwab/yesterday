@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -23,6 +23,7 @@ type Client struct {
 	mu               sync.RWMutex // Protects accessToken
 	//eventPoller      *EventPoller    // Event polling system
 	eventPublisher *EventPublisher // Event publishing system
+	log            *log.Logger
 }
 
 // ClientOption represents a functional option for configuring the Client
@@ -42,6 +43,12 @@ func WithRefreshTokenPath(path string) ClientOption {
 	}
 }
 
+func WithLogger(logger *log.Logger) ClientOption {
+	return func(c *Client) {
+		c.log = logger
+	}
+}
+
 // NewClient creates a new Yesterday API client with the given base URL and options
 func NewClient(baseURL string, options ...ClientOption) *Client {
 	// Set default refresh token path
@@ -51,23 +58,11 @@ func NewClient(baseURL string, options ...ClientOption) *Client {
 	}
 	defaultRefreshTokenPath := filepath.Join(homeDir, ".yesterday", "refresh_token")
 
-	// Configure TLS for localhost domains
-	tlsConfig, err := configureTLSForLocalhost(baseURL)
-	if err != nil {
-		// Log the error but continue with default TLS settings
-		fmt.Printf("TLS configuration warning: %v\n", err)
-	}
-
-	// Create HTTP client with optional TLS configuration
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	if tlsConfig != nil {
-		applyTLSConfigToClient(httpClient, tlsConfig)
-	}
-
 	client := &Client{
 		baseURL:          baseURL,
-		httpClient:       httpClient,
+		httpClient:       nil,
 		refreshTokenPath: defaultRefreshTokenPath,
+		log:              log.New(os.Stderr, "yesterday: ", log.LstdFlags),
 	}
 
 	// Initialize event poller and publisher
@@ -87,8 +82,25 @@ func (c *Client) GetBaseURL() string {
 	return c.baseURL
 }
 
+func (c *Client) Log() *log.Logger {
+	return c.log
+}
+
 // GetHTTPClient returns the underlying HTTP client
 func (c *Client) GetHTTPClient() *http.Client {
+	if c.httpClient == nil {
+		// Configure TLS for localhost domains
+		tlsConfig, err := configureTLSForLocalhost(c.baseURL, c.log)
+		if err != nil {
+			// continue with default TLS settings
+		}
+
+		// Create HTTP client with optional TLS configuration
+		c.httpClient = &http.Client{Timeout: 30 * time.Second}
+		if tlsConfig != nil {
+			applyTLSConfigToClient(c.httpClient, tlsConfig)
+		}
+	}
 	return c.httpClient
 }
 
@@ -126,14 +138,16 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 	if body != nil {
 		bodyBytes, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+			c.log.Printf("failed to marshal request body: %w", err)
+			return nil, err
 		}
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		c.log.Printf("failed to create request: %w", err)
+		return nil, err
 	}
 
 	// Add authentication header if we have an access token
@@ -151,9 +165,10 @@ func (c *Client) makeRequest(ctx context.Context, method, path string, body inte
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.GetHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		c.log.Printf("request failed: %w", err)
+		return nil, err
 	}
 
 	return resp, nil
@@ -187,7 +202,8 @@ func (c *Client) PostMultipart(ctx context.Context, path string, fields map[stri
 	// Add form fields
 	for key, value := range fields {
 		if err := writer.WriteField(key, value); err != nil {
-			return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+			c.log.Printf("failed to write field %s: %w", key, err)
+			return nil, err
 		}
 	}
 
@@ -195,10 +211,12 @@ func (c *Client) PostMultipart(ctx context.Context, path string, fields map[stri
 	for key, data := range files {
 		part, err := writer.CreateFormFile(key, key)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create form file %s: %w", key, err)
+			c.log.Printf("failed to create form file %s: %w", key, err)
+			return nil, err
 		}
 		if _, err := part.Write(data); err != nil {
-			return nil, fmt.Errorf("failed to write file data for %s: %w", key, err)
+			c.log.Printf("failed to write file data for %s: %w", key, err)
+			return nil, err
 		}
 	}
 
@@ -208,7 +226,8 @@ func (c *Client) PostMultipart(ctx context.Context, path string, fields map[stri
 	url := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		c.log.Printf("failed to create request: %w", err)
+		return nil, err
 	}
 
 	// Add authentication header if we have an access token
@@ -226,9 +245,10 @@ func (c *Client) PostMultipart(ctx context.Context, path string, fields map[stri
 		}
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.GetHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		c.log.Printf("request failed: %w", err)
+		return nil, err
 	}
 
 	return resp, nil
@@ -240,7 +260,8 @@ func (c *Client) Initialize(ctx context.Context) error {
 	if err := c.RefreshAccessToken(ctx); err != nil {
 		// Log the error but don't fail initialization - user can still login
 		// In a real implementation, you might want to use a proper logger here
-		return fmt.Errorf("failed to refresh access token during initialization: %w", err)
+		c.log.Printf("failed to refresh access token during initialization: %w", err)
+		return err
 	}
 	return nil
 }

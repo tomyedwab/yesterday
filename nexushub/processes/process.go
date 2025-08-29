@@ -1,6 +1,7 @@
 package processes
 
 import (
+	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -158,30 +159,33 @@ func (ps ProcessState) String() string {
 // ManagedProcess represents a subprocess that is being managed by the process manager.
 // It holds information about the desired AppInstance, the actual running os/exec.Cmd, and its current state.
 type ManagedProcess struct {
-	Instance AppInstance    // The desired configuration for this process.
-	Cmd      *exec.Cmd      // The running command.
-	Port     int            // The TCP port assigned to this process.
-	PID      int            // Process ID of the running subprocess.
-	State    ProcessState   // Current health/lifecycle state of the process.
-	LogBuffer *LogBuffer    // Buffer for storing recent log entries from this process.
+	Instance  AppInstance  // The desired configuration for this process.
+	Cmd       *exec.Cmd    // The running command.
+	Port      int          // The TCP port assigned to this process.
+	PID       int          // Process ID of the running subprocess.
+	State     ProcessState // Current health/lifecycle state of the process.
+	LogBuffer *LogBuffer   // Buffer for storing recent log entries from this process.
 
 	mu             sync.Mutex // Protects access to this struct's mutable fields.
 	startTime      time.Time  // Time when the process was last started.
 	lastHealthCh   time.Time  // Time of the last successful health check.
 	unhealthySince time.Time  // Time when the process first became unhealthy.
 	restartCount   int        // Number of times this process has been restarted.
+
+	currentEventId int // Current event ID for this process.
 }
 
 // NewManagedProcess creates a new ManagedProcess instance.
 func NewManagedProcess(instance AppInstance, cmd *exec.Cmd, port int) *ManagedProcess {
 	return &ManagedProcess{
-		Instance:  instance,
-		Cmd:       cmd,
-		Port:      port,
-		PID:       cmd.Process.Pid, // Assumes cmd.Process is not nil (i.e., process started)
-		State:     StateStarting,   // Initial state after starting
-		LogBuffer: NewLogBuffer(1000), // Keep last 1000 log entries
-		startTime: time.Now(),
+		Instance:       instance,
+		Cmd:            cmd,
+		Port:           port,
+		PID:            cmd.Process.Pid,    // Assumes cmd.Process is not nil (i.e., process started)
+		State:          StateStarting,      // Initial state after starting
+		LogBuffer:      NewLogBuffer(1000), // Keep last 1000 log entries
+		startTime:      time.Now(),
+		currentEventId: -1,
 	}
 }
 
@@ -201,6 +205,15 @@ func (mp *ManagedProcess) UpdateState(newState ProcessState) {
 		}
 	case StateFailed, StateStopped:
 		mp.Cmd = nil // Clear the command as it's no longer running
+	}
+}
+
+func (mp *ManagedProcess) UpdateEventId(eventId int) {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if mp.currentEventId != eventId {
+		mp.currentEventId = eventId
+		log.Printf("Application %s updated event ID to %d", mp.Instance.InstanceID, eventId)
 	}
 }
 

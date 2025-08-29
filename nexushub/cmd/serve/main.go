@@ -19,6 +19,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy"
 	"github.com/tomyedwab/yesterday/nexushub/packages"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
@@ -49,8 +50,15 @@ func main() {
 
 	installDir := packageManager.GetInstallDir()
 
-	db := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
-	sessionManager, err := sessions.NewManager(db, 10*time.Minute, 1*time.Hour)
+	sessionsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
+	sessionManager, err := sessions.NewManager(sessionsDatabase, 10*time.Minute, 1*time.Hour)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create EventManager
+	eventsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "events.db"))
+	_, err = events.CreateEventManager(eventsDatabase)
 	if err != nil {
 		log.Fatal(err)
 	}

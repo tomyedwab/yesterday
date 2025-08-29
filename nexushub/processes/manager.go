@@ -880,7 +880,7 @@ func (pm *ProcessManager) performHealthChecks(ctx context.Context) {
 // It also handles logic for consecutive failures and triggering restarts.
 func (pm *ProcessManager) checkAndUpdateHealth(ctx context.Context, process *ManagedProcess) {
 	pm.logger.Debug("Performing health check", "instanceID", process.Instance.InstanceID, "port", process.Port)
-	newState, err := pm.healthChecker.Check(process)
+	newState, eventId, err := pm.healthChecker.Check(process)
 
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -898,6 +898,8 @@ func (pm *ProcessManager) checkAndUpdateHealth(ctx context.Context, process *Man
 	}
 
 	currentInternalState := process.GetState() // Get state from the locked process object
+
+	process.UpdateEventId(eventId)
 
 	if newState == StateRunning {
 		if currentInternalState != StateRunning {

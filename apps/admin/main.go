@@ -6,8 +6,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/applib"
-	"github.com/tomyedwab/yesterday/applib/database"
-	"github.com/tomyedwab/yesterday/applib/events"
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	"github.com/tomyedwab/yesterday/apps/admin/handlers"
 	"github.com/tomyedwab/yesterday/apps/admin/state"
@@ -32,30 +30,20 @@ func main() {
 		}, err, http.StatusInternalServerError)
 	})
 
-	http.HandleFunc("/api/applications", func(w http.ResponseWriter, r *http.Request) {
-		db := r.Context().Value(applib.ContextSqliteDatabaseKey).(*sqlx.DB)
-		ret, err := state.GetApplications(db)
-		httputils.HandleAPIResponse(w, r, map[string]any{
-			"applications": ret,
-		}, err, http.StatusInternalServerError)
-	})
-
 	db := application.GetDatabase()
 
-	// Register event handlers
-	database.AddEventHandler(db, events.DBInitEventType, state.ApplicationsHandleInitEvent)
-	database.AddEventHandler(db, events.DBInitEventType, state.UsersHandleInitEvent)
+	tx := db.GetDB().MustBegin()
+	err = state.InitUsers(tx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	tx.Commit()
 
 	// User management event handlers
-	database.AddEventHandler(db, state.UserAddedEventType, state.UsersHandleAddedEvent)
-	database.AddEventHandler(db, state.UpdateUserPasswordEventType, state.UsersHandleUpdatePasswordEvent)
-	database.AddEventHandler(db, state.DeleteUserEventType, state.UsersHandleDeleteEvent)
-	database.AddEventHandler(db, state.UpdateUserEventType, state.UsersHandleUpdateEvent)
-
-	// Application management event handlers
-	database.AddEventHandler(db, state.CreateApplicationEventType, state.ApplicationsHandleCreateEvent)
-	database.AddEventHandler(db, state.UpdateApplicationEventType, state.ApplicationsHandleUpdateEvent)
-	database.AddEventHandler(db, state.DeleteApplicationEventType, state.ApplicationsHandleDeleteEvent)
+	//database.AddEventHandler(db, state.UserAddedEventType, state.UsersHandleAddedEvent)
+	//database.AddEventHandler(db, state.UpdateUserPasswordEventType, state.UsersHandleUpdatePasswordEvent)
+	//database.AddEventHandler(db, state.DeleteUserEventType, state.UsersHandleDeleteEvent)
+	//database.AddEventHandler(db, state.UpdateUserEventType, state.UsersHandleUpdateEvent)
 
 	err = db.Initialize()
 	if err != nil {

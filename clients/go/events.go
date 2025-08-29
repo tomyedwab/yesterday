@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+type EventPublishData struct {
+	// The client ID for the publish request, used for deduplication
+	ClientID string `json:"clientId"`
+	// The event type
+	Type string `json:"type"`
+	// The event timestamp
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // EventPoller manages event number polling for detecting data changes
 type EventPoller struct {
 	client             *Client
@@ -47,13 +56,13 @@ func (ep *EventPoller) GetCurrentEventNumber() int64 {
 func (ep *EventPoller) setCurrentEventNumber(eventNumber int64) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
-	
+
 	if eventNumber <= ep.currentEventNumber {
 		return // No change or older event
 	}
-	
+
 	ep.currentEventNumber = eventNumber
-	
+
 	// Notify all subscribers of the new event number
 	for _, subscriber := range ep.subscribers {
 		select {
@@ -68,21 +77,21 @@ func (ep *EventPoller) setCurrentEventNumber(eventNumber int64) {
 func (ep *EventPoller) StartEventPolling(interval time.Duration) error {
 	ep.runningMu.Lock()
 	defer ep.runningMu.Unlock()
-	
+
 	if ep.running {
 		return fmt.Errorf("event polling is already running")
 	}
-	
+
 	if interval > 0 {
 		ep.pollInterval = interval
 	}
-	
+
 	ep.running = true
 	ep.stopCh = make(chan struct{})
-	
+
 	// Start the polling goroutine
 	go ep.pollLoop()
-	
+
 	return nil
 }
 
@@ -90,14 +99,14 @@ func (ep *EventPoller) StartEventPolling(interval time.Duration) error {
 func (ep *EventPoller) StopEventPolling() {
 	ep.runningMu.Lock()
 	defer ep.runningMu.Unlock()
-	
+
 	if !ep.running {
 		return
 	}
-	
+
 	ep.running = false
 	close(ep.stopCh)
-	
+
 	// Close all subscriber channels
 	ep.mu.Lock()
 	for _, subscriber := range ep.subscribers {
@@ -111,10 +120,10 @@ func (ep *EventPoller) StopEventPolling() {
 func (ep *EventPoller) SubscribeToEvents() <-chan int64 {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
-	
+
 	ch := make(chan int64, 10) // Buffered channel to prevent blocking
 	ep.subscribers = append(ep.subscribers, ch)
-	
+
 	return ch
 }
 
@@ -122,10 +131,10 @@ func (ep *EventPoller) SubscribeToEvents() <-chan int64 {
 func (ep *EventPoller) pollLoop() {
 	ticker := time.NewTicker(ep.pollInterval)
 	defer ticker.Stop()
-	
+
 	// Perform initial poll
 	ep.performPoll()
-	
+
 	for {
 		select {
 		case <-ticker.C:
@@ -140,12 +149,12 @@ func (ep *EventPoller) pollLoop() {
 func (ep *EventPoller) performPoll() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	currentEventNumber := ep.GetCurrentEventNumber()
-	
+
 	// Create the poll URL with the current event number
 	pollURL := fmt.Sprintf("/api/poll?e=%d", currentEventNumber)
-	
+
 	resp, err := ep.client.Get(ctx, pollURL, nil)
 	if err != nil {
 		// Log error but continue polling
@@ -153,12 +162,12 @@ func (ep *EventPoller) performPoll() {
 		return
 	}
 	defer resp.Body.Close()
-	
+
 	// Handle 304 Not Modified - no new events
 	if resp.StatusCode == http.StatusNotModified {
 		return
 	}
-	
+
 	// Handle successful response
 	if resp.StatusCode == http.StatusOK {
 		var pollResponse PollResponse
@@ -166,12 +175,12 @@ func (ep *EventPoller) performPoll() {
 			// Log error but continue polling
 			return
 		}
-		
+
 		// Update event number if it has changed
 		ep.setCurrentEventNumber(pollResponse.EventNumber)
 		return
 	}
-	
+
 	// Handle other status codes as errors
 	// Log error but continue polling
 }
@@ -199,7 +208,7 @@ func (ep *EventPoller) GetPollInterval() time.Duration {
 // WaitForEvent waits for the next event number change with a timeout
 func (ep *EventPoller) WaitForEvent(ctx context.Context) (int64, error) {
 	eventCh := ep.SubscribeToEvents()
-	
+
 	select {
 	case eventNumber := <-eventCh:
 		return eventNumber, nil

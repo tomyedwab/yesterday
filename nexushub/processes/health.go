@@ -1,17 +1,21 @@
 package processes
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
 // HealthChecker defines the interface for performing health checks on a managed process.
 type HealthChecker interface {
 	// Check performs a health check on the given process.
-	// It returns the determined ProcessState (e.g., StateRunning if healthy, StateUnhealthy if not).
+	// It returns the determined ProcessState (e.g., StateRunning if healthy, StateUnhealthy if not)
+	// as well as the event ID associated with the health check.
 	// An error is returned if the check itself fails due to network issues or misconfiguration.
-	Check(process *ManagedProcess) (ProcessState, error)
+	Check(process *ManagedProcess) (ProcessState, int, error)
 }
 
 // HTTPHealthChecker implements HealthChecker using HTTP GET requests.
@@ -34,29 +38,34 @@ func NewHTTPHealthChecker(requestTimeout time.Duration) *HTTPHealthChecker {
 
 // Check performs an HTTP health check on the given ManagedProcess.
 // It targets http://localhost:<PORT>/api/status.
-func (h *HTTPHealthChecker) Check(process *ManagedProcess) (ProcessState, error) {
+func (h *HTTPHealthChecker) Check(process *ManagedProcess) (ProcessState, int, error) {
 	if process.Port <= 0 {
-		return StateFailed, fmt.Errorf("invalid port %d for health check on instance %s", process.Port, process.Instance.InstanceID)
+		return StateFailed, -1, fmt.Errorf("invalid port %d for health check on instance %s", process.Port, process.Instance.InstanceID)
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/api/status", process.Port)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return StateFailed, fmt.Errorf("failed to create health check request for %s: %w", process.Instance.InstanceID, err)
+		return StateFailed, -1, fmt.Errorf("failed to create health check request for %s: %w", process.Instance.InstanceID, err)
 	}
 
 	resp, err := h.client.Do(req)
 	if err != nil {
 		// Network error, timeout, connection refused, etc.
-		return StateUnhealthy, fmt.Errorf("health check HTTP request for %s failed: %w", process.Instance.InstanceID, err)
+		return StateUnhealthy, -1, fmt.Errorf("health check HTTP request for %s failed: %w", process.Instance.InstanceID, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		return StateRunning, nil // Healthy
+		var statusInfo types.ApplicationStatusInfo
+		err = json.NewDecoder(resp.Body).Decode(&statusInfo)
+		if err != nil {
+			return StateUnhealthy, -1, fmt.Errorf("failed to decode health check response for %s: %w", process.Instance.InstanceID, err)
+		}
+		return StateRunning, statusInfo.CurrentEventId, nil // Healthy
 	}
 
 	// Non-200 status code indicates an issue with the service itself.
-	return StateUnhealthy, fmt.Errorf("health check for %s at %s returned status %s", process.Instance.InstanceID, url, resp.Status)
+	return StateUnhealthy, -1, fmt.Errorf("health check for %s at %s returned status %s", process.Instance.InstanceID, url, resp.Status)
 }

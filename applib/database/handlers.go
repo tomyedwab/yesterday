@@ -1,15 +1,13 @@
 package database
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/tomyedwab/yesterday/applib/events"
 	"github.com/tomyedwab/yesterday/applib/httputils"
+	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
 func waitForEventId(w http.ResponseWriter, r *http.Request, eventState *events.EventState) bool {
@@ -30,58 +28,26 @@ func waitForEventId(w http.ResponseWriter, r *http.Request, eventState *events.E
 	return false
 }
 
-func (db *Database) InitHandlers() {
+func (db *Database) InitHandlers() error {
+	eventState, err := events.NewEventState(db.GetDB())
+	if err != nil {
+		return err
+	}
+
+	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+		StatusInfo := types.ApplicationStatusInfo{
+			CurrentEventId: eventState.CurrentEventId,
+		}
+		httputils.HandleAPIResponse(w, r, StatusInfo, nil, http.StatusOK)
+	})
+
+	return nil
+
+	/* TODO STOPSHIP
 	initialEventId, err := db.CurrentEventV1()
 	if err != nil {
 		panic(err)
 	}
-	eventState := events.NewEventState(initialEventId)
-
-	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
-	})
-
-	http.HandleFunc("/api/publish", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "OPTIONS" {
-			w.Header().Set("Access-Control-Allow-Methods", "POST")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			return
-		}
-		if r.Method != "POST" {
-			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-			return
-		}
-		clientId := r.URL.Query().Get("cid")
-		if clientId == "" {
-			http.Error(w, "Missing client ID", http.StatusBadRequest)
-			return
-		}
-
-		buf, err := io.ReadAll(r.Body)
-		if err != nil {
-			httputils.HandleAPIResponse(w, r, nil, err, http.StatusInternalServerError)
-			return
-		}
-
-		var event events.GenericEvent
-		if err := json.Unmarshal(buf, &event); err != nil {
-			httputils.HandleAPIResponse(w, r, nil, err, http.StatusInternalServerError)
-			return
-		}
-
-		newEventId, err := db.CreateEvent(&event, buf, clientId)
-		if err == nil {
-			eventState.SetCurrentEventId(newEventId)
-		}
-		if err != nil {
-			// Special case for duplicate errors. We return a 200 in this case.
-			if duplicateErr, ok := err.(*DuplicateEventError); ok {
-				httputils.HandleAPIResponse(w, r, map[string]any{"status": "duplicate", "id": duplicateErr.Id, "clientId": clientId}, nil, http.StatusOK)
-				return
-			}
-		}
-		httputils.HandleAPIResponse(w, r, map[string]any{"status": "success", "id": newEventId, "clientId": clientId}, err, http.StatusInternalServerError)
-	})
 
 	http.HandleFunc("/api/poll", func(w http.ResponseWriter, r *http.Request) {
 		if !waitForEventId(w, r, eventState) {
@@ -107,5 +73,6 @@ func (db *Database) InitHandlers() {
 		eventState.SetCurrentEventId(newEventId)
 		return nil
 	}
+	*/
 
 }

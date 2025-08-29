@@ -1,4 +1,4 @@
-package database
+package events
 
 import (
 	"database/sql"
@@ -40,8 +40,8 @@ SELECT COALESCE(MAX(id), 0) FROM event_v1;
 
 // EventDBInit initializes the event database schema. All events are stored as
 // JSON blobs in the event_v1 table.
-func EventDBInit(tx *sqlx.Tx) error {
-	_, err := tx.Exec(eventSchema)
+func EventDBInit(db *sqlx.DB) error {
+	_, err := db.Exec(eventSchema)
 	return err
 }
 
@@ -72,9 +72,9 @@ func EventDBCreateEvent(tx *sqlx.Tx, eventData []byte, clientId string) (int, er
 	return int(eventId), nil
 }
 
-func (db *Database) CurrentEventV1() (int, error) {
+func CurrentEventV1(db *sqlx.DB) (int, error) {
 	var id int
-	err := db.db.Get(&id, getLatestEventIdV1Sql)
+	err := db.Get(&id, getLatestEventIdV1Sql)
 	if err != nil {
 		return 0, err
 	}

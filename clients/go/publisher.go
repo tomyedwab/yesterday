@@ -8,30 +8,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"sync"
 	"time"
 )
 
 // EventPublisher provides reliable event publishing with queuing and retry logic
 type EventPublisher struct {
-	client        *Client
-	queue         []PendingEvent
-	queueMu       sync.RWMutex
-	retryBackoff  time.Duration
-	maxRetries    int
-	batchSize     int
-	running       bool
-	runningMu     sync.RWMutex
-	stopCh        chan struct{}
-	flushCh       chan chan error
-	wg            sync.WaitGroup
+	client       *Client
+	queue        []PendingEvent
+	queueMu      sync.RWMutex
+	retryBackoff time.Duration
+	maxRetries   int
+	batchSize    int
+	running      bool
+	runningMu    sync.RWMutex
+	stopCh       chan struct{}
+	flushCh      chan chan error
+	wg           sync.WaitGroup
 }
 
 // PendingEvent represents an event awaiting publication
 type PendingEvent struct {
-	ID          string      `json:"id"`
-	EventType   string      `json:"eventType"`
+	ClientID    string      `json:"clientID"`
 	Payload     interface{} `json:"payload"`
 	Attempts    int         `json:"attempts"`
 	LastAttempt time.Time   `json:"lastAttempt"`
@@ -84,18 +82,8 @@ func NewEventPublisher(client *Client, options ...PublisherOption) *EventPublish
 	return publisher
 }
 
-// generateEventID generates a unique identifier for an event
-func generateEventID() string {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to timestamp-based ID if random generation fails
-		return fmt.Sprintf("event_%d", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(bytes)
-}
-
-// generateClientID generates a random client ID for the publish request
-func generateClientID() string {
+// GenerateClientID generates a random client ID for the publish request
+func GenerateClientID() string {
 	bytes := make([]byte, 8)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback to timestamp-based ID if random generation fails
@@ -105,10 +93,9 @@ func generateClientID() string {
 }
 
 // PublishEvent adds an event to the publish queue and triggers immediate publish attempt
-func (p *EventPublisher) PublishEvent(eventType string, payload interface{}) error {
+func (p *EventPublisher) PublishEvent(clientId string, payload interface{}) error {
 	event := PendingEvent{
-		ID:          generateEventID(),
-		EventType:   eventType,
+		ClientID:    clientId,
 		Payload:     payload,
 		Attempts:    0,
 		LastAttempt: time.Time{},
@@ -262,12 +249,12 @@ func (p *EventPublisher) processQueue() {
 	p.queueMu.Lock()
 	if success {
 		// Remove the event from queue
-		if len(p.queue) > 0 && p.queue[0].ID == event.ID {
+		if len(p.queue) > 0 && p.queue[0].ClientID == event.ClientID {
 			p.queue = p.queue[1:]
 		}
 	} else {
 		// Update the event with retry information
-		if len(p.queue) > 0 && p.queue[0].ID == event.ID {
+		if len(p.queue) > 0 && p.queue[0].ClientID == event.ClientID {
 			p.queue[0] = event
 			// If max retries exceeded, remove the event
 			if event.Attempts >= p.maxRetries {
@@ -331,26 +318,15 @@ func (p *EventPublisher) publishSingleEvent(event *PendingEvent) bool {
 	event.Attempts++
 	event.LastAttempt = time.Now()
 
-	// Generate a random client ID for this request
-	clientID := generateClientID()
-
-	// Prepare the request payload
-	payload := map[string]interface{}{
-		"eventType": event.EventType,
-		"payload":   event.Payload,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
+	p.client.Log().Printf("Sending event with ID %s to %s...\n", event.ClientID, p.client.baseURL)
+	payloadBytes, err := json.Marshal(event.Payload)
 	if err != nil {
 		// JSON marshaling error - this event is malformed, don't retry
 		return true
 	}
 
-	// Build the URL with client ID parameter
-	publishURL := "/api/publish?cid=" + url.QueryEscape(clientID)
-
 	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", p.client.baseURL+publishURL, bytes.NewReader(payloadBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", p.client.baseURL+"/events/publish", bytes.NewReader(payloadBytes))
 	if err != nil {
 		return false
 	}

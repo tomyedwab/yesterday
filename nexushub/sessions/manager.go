@@ -3,6 +3,7 @@ package sessions
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,12 +32,12 @@ type SessionManager struct {
 // NewManager creates and initializes a new SessionManager.
 // It requires a SessionStore implementation and token durations.
 func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*SessionManager, error) {
-	fmt.Println("Initializing session manager")
+	log.Printf("Initializing session manager")
 	err := DBInit(db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
-	fmt.Println("Database initialized")
+	log.Printf("Database initialized")
 
 	m := &SessionManager{
 		db:            db,
@@ -44,13 +45,13 @@ func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*S
 		sessionExpiry: sessionExpiry,
 	}
 
-	fmt.Println("SessionManager initialized")
+	log.Printf("SessionManager initialized")
 
 	return m, nil
 }
 
-func (m *SessionManager) CreateSession(userID int, sessionType string) (*Session, error) {
-	session, err := NewSession(userID, sessionType)
+func (m *SessionManager) CreateSession(userID int) (*Session, error) {
+	session, err := NewSession(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +66,7 @@ func (m *SessionManager) CreateSession(userID int, sessionType string) (*Session
 }
 
 func (m *SessionManager) GetSessionByRefreshToken(refreshToken string) (*Session, error) {
+	log.Printf("Getting session by refresh token: %s", refreshToken) // donotcheckin
 	session, err := DBGetSessionByRefreshToken(m.db, refreshToken)
 	if err != nil {
 		return nil, err

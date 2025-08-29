@@ -49,8 +49,7 @@ func (f FlexibleInt64) Int64() int64 {
 // Session represents an active user session.
 // Sessions are stored in the database and referenced by their ID.
 type Session struct {
-	ID            string        `json:"id" db:"id"`                     // Unique identifier for the session (e.g., UUID)
-	SessionType   string        `json:"session_type" db:"session_type"` // Type of the session, either "login" or "app"
+	ID            string        `json:"id" db:"id"` // Unique identifier for the session (e.g., UUID)
 	UserID        int           `json:"user_id" db:"user_id"`
 	RefreshToken  string        `json:"refresh_token" db:"refresh_token"` // The refresh token
 	CreatedAt     FlexibleInt64 `json:"created_at" db:"created_at"`
@@ -58,14 +57,13 @@ type Session struct {
 }
 
 // NewSession creates a new session instance with a unique ID.
-func NewSession(userID int, sessionType string) (*Session, error) {
+func NewSession(userID int) (*Session, error) {
 	sessionID := uuid.New().String()
 	refreshToken := uuid.New().String()
 	now := FlexibleInt64(time.Now().UTC().Unix())
 	return &Session{
 		ID:            sessionID,
 		UserID:        userID,
-		SessionType:   sessionType,
 		RefreshToken:  refreshToken,
 		CreatedAt:     now,
 		LastRefreshed: now,
@@ -94,7 +92,6 @@ func DBInit(db *sqlx.DB) error {
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
 		user_id INTEGER NOT NULL,
-		session_type TEXT NOT NULL,
 		refresh_token TEXT NOT NULL,
 		created_at INTEGER NOT NULL,
 		last_refreshed INTEGER NOT NULL
@@ -117,7 +114,7 @@ func DBGetSessionByRefreshToken(db *sqlx.DB, refreshToken string) (*Session, err
 
 func (s *Session) DBCreate(db *sqlx.DB) error {
 	fmt.Printf("Creating session %s\n", s.ID)
-	_, err := db.Exec("INSERT INTO sessions (id, user_id, session_type, refresh_token, created_at, last_refreshed) VALUES ($1, $2, $3, $4, $5, $6)", s.ID, s.UserID, s.SessionType, s.RefreshToken, s.CreatedAt, s.LastRefreshed)
+	_, err := db.Exec("INSERT INTO sessions (id, user_id, refresh_token, created_at, last_refreshed) VALUES ($1, $2, $3, $4, $5)", s.ID, s.UserID, s.RefreshToken, s.CreatedAt, s.LastRefreshed)
 	return err
 }
 

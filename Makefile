@@ -19,10 +19,6 @@ build: clean
 	go build -o build/admin/bin/app apps/admin/main.go
 	(cd apps/admin/web && npm run build && cp -R dist/* ../../../build/admin/static/)
 	(cd build/admin && zip -r ../pkg/github_com__tomyedwab__yesterday__apps__admin.zip .)
-	# Build example app
-	mkdir -p build/example/bin
-	go build -o build/example/bin/app apps/example/main.go
-	(cd build/example && zip -r ../pkg/github_com__tomyedwab__yesterday__apps__example.zip .)
 	# Build libkrun
 	mkdir -p build/libkrun/bin build/libkrun/lib
 	cp -R nexushub/krunclient/rootfs/* build/libkrun/

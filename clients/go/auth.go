@@ -21,6 +21,7 @@ type LoginRequest struct {
 // AccessTokenResponse represents the access token response
 type AccessTokenResponse struct {
 	AccessToken string `json:"access_token"`
+	Error       string `json:"error"`
 }
 
 // Login authenticates the user with username and password
@@ -158,12 +159,30 @@ func (c *Client) RefreshAccessToken(ctx context.Context) error {
 		return NewErrorWithCause(ErrorTypeAPI, "failed to parse access token response", err)
 	}
 
+	if tokenResp.Error != "" {
+		return NewAuthenticationError(tokenResp.Error)
+	}
+
 	if tokenResp.AccessToken == "" {
 		return NewAuthenticationError("empty access token received")
 	}
 
+	// Extract refresh token from YRT cookie
+	var newRefreshToken string
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "YRT" {
+			newRefreshToken = cookie.Value
+			break
+		}
+	}
+
+	if newRefreshToken == "" {
+		return NewAuthenticationError("no refresh token received")
+	}
+
 	// Store access token in memory
 	c.setAccessToken(tokenResp.AccessToken)
+	c.storeRefreshToken(newRefreshToken)
 
 	return nil
 }

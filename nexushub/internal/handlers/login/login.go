@@ -14,45 +14,26 @@ import (
 
 func HandleLogin(w http.ResponseWriter, r *http.Request) {
 	sessionManager := r.Context().Value(sessions.SessionManagerKey).(*sessions.SessionManager)
-	var loginSession *sessions.Session
 	var err error
 	body, _ := io.ReadAll(r.Body)
 
-	if refreshToken, err := r.Cookie("YRT"); body != nil && err == nil {
-		// If a refresh token is passed in, then the user is already logged in,
-		// so just look up their login session and generate a new session for
-		// the application
-		loginSession, err = sessionManager.GetSessionByRefreshToken(refreshToken.Value)
-		if err != nil {
-			loginSession = nil
-		}
-	}
-	if loginSession == nil {
-		// If there is no refresh token, then we expect a username and password.
-		// Make a cross-service request to the admin service to verify the
-		// credentials before creating a new login session.
-		var loginResponse types.AdminLoginResponse
-		statusCode, err := httputils.CrossServiceRequest("/internal/dologin", "18736e4f-93f9-4606-a7be-863c7986ea5b", body, &loginResponse)
-		if err != nil {
-			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), statusCode)
-			return
-		}
-
-		if !loginResponse.Success {
-			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("invalid username or password"), http.StatusUnauthorized)
-			return
-		}
-
-		loginSession, err = sessionManager.CreateSession(loginResponse.UserID, "login")
-		if err != nil {
-			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to create login session: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	appSession, err := sessionManager.CreateSession(loginSession.UserID, "app")
+	// Make a cross-service request to the admin service to verify the
+	// credentials before creating a new session.
+	var loginResponse types.AdminLoginResponse
+	statusCode, err := httputils.CrossServiceRequest("/internal/dologin", "18736e4f-93f9-4606-a7be-863c7986ea5b", body, &loginResponse)
 	if err != nil {
-		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to create app session: %v", err), http.StatusInternalServerError)
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to make cross-service request: %v", err), statusCode)
+		return
+	}
+
+	if !loginResponse.Success {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("invalid username or password"), http.StatusUnauthorized)
+		return
+	}
+
+	session, err := sessionManager.CreateSession(loginResponse.UserID)
+	if err != nil {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to create login session: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -62,9 +43,6 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		domain = strings.Split(domain, ":")[0]
 	}
 
-	w.Header().Set("Set-Cookie", "YRT="+loginSession.RefreshToken+"; Path=/; Domain="+domain+"; HttpOnly; Secure; SameSite=None")
-	httputils.HandleAPIResponse(w, r, map[string]string{
-		"domain":            domain,
-		"app_refresh_token": appSession.RefreshToken,
-	}, nil, http.StatusOK)
+	w.Header().Set("Set-Cookie", "YRT="+session.RefreshToken+"; Path=/; Domain="+domain+"; HttpOnly; Secure; SameSite=None")
+	w.Write([]byte("ok"))
 }

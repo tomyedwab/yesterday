@@ -22,6 +22,7 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, host string, inst
 		// There is no refresh token cookie, redirect to login page
 		// TODO(tom) STOPSHIP this is not going to be correct in general
 		respJson, _ := json.Marshal(map[string]string{
+			"error":     "missing refresh token",
 			"login_url": fmt.Sprintf("https://login.%s/", host),
 		})
 		w.WriteHeader(http.StatusOK)
@@ -34,6 +35,7 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, host string, inst
 		// Invalid refresh token, redirect to login page
 		// TODO(tom) STOPSHIP this is not going to be correct in general
 		respJson, _ := json.Marshal(map[string]string{
+			"error":     "refresh token not found",
 			"login_url": fmt.Sprintf("https://login.%s/", host),
 		})
 		w.WriteHeader(http.StatusOK)

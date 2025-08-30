@@ -16,35 +16,30 @@ type User struct {
 	PasswordHash string `db:"password_hash" json:"-"`
 }
 
-const UserAddedEventType string = "AddUser"
-const UpdateUserPasswordEventType string = "UpdateUserPassword"
-const DeleteUserEventType string = "DeleteUser"
-const UpdateUserEventType string = "UpdateUser"
+const UserAddedEventType string = "User:Add"
+const UpdateUserPasswordEventType string = "User:UpdatePassword"
+const DeleteUserEventType string = "User:Delete"
+const UpdateUserEventType string = "User:Update"
 
-/* TODO STOPSHIP
 type UserAddedEvent struct {
-	events.GenericEvent
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"`
+	Username     string `json:"username"`
+	Salt         string `json:"salt"`
+	PasswordHash string `json:"passwordHash,omitempty"`
 }
 
 type UpdateUserPasswordEvent struct {
-	events.GenericEvent
-	UserID      int    `json:"user_id"`
-	NewPassword string `json:"new_password"`
+	UserID      int    `json:"userId"`
+	NewPassword string `json:"newPassword"`
 }
 
 type DeleteUserEvent struct {
-	events.GenericEvent
-	UserID int `json:"user_id"`
+	UserID int `json:"userId"`
 }
 
 type UpdateUserEvent struct {
-	events.GenericEvent
-	UserID   int    `json:"user_id"`
+	UserID   int    `json:"userId"`
 	Username string `json:"username"`
 }
-*/
 
 // -- DB Helpers --
 
@@ -65,7 +60,7 @@ func InitUsers(tx *sqlx.Tx) error {
 
 	// Create users table
 	_, err := tx.Exec(`
-		CREATE TABLE users_v1 (
+		CREATE TABLE IF NOT EXISTS users_v1 (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT UNIQUE NOT NULL,
 			salt TEXT NOT NULL,
@@ -76,7 +71,7 @@ func InitUsers(tx *sqlx.Tx) error {
 	}
 
 	// Create indexes for better performance
-	_, err = tx.Exec(`CREATE INDEX idx_users_username ON users_v1(username)`)
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_users_username ON users_v1(username)`)
 	if err != nil {
 		return fmt.Errorf("failed to create users username index: %w", err)
 	}
@@ -85,6 +80,7 @@ func InitUsers(tx *sqlx.Tx) error {
 	_, err = tx.Exec(`
 		INSERT INTO users_v1 (username, salt, password_hash)
 		SELECT 'admin', $1, $2
+		ON CONFLICT (username) DO NOTHING
 		`, salt, passwordHash)
 	if err != nil {
 		return fmt.Errorf("failed to create admin user: %w", err)
@@ -94,22 +90,10 @@ func InitUsers(tx *sqlx.Tx) error {
 	return nil
 }
 
-/*
 func UsersHandleAddedEvent(tx *sqlx.Tx, event *UserAddedEvent) (bool, error) {
 	fmt.Printf("Adding user: %s\n", event.Username)
-	// Create random salt
-	salt := uuid.New().String()
-
-	var passwordHash string
-	if event.Password != "" {
-		// Hash the provided password
-		hasher := sha256.New()
-		hasher.Write([]byte(salt + event.Password))
-		passwordHash = hex.EncodeToString(hasher.Sum(nil))
-	}
-
 	_, err := tx.Exec(`INSERT INTO users_v1 (username, salt, password_hash) VALUES ($1, $2, $3)`,
-		event.Username, salt, passwordHash)
+		event.Username, event.Salt, event.PasswordHash)
 	if err != nil {
 		// Consider UNIQUE constraint violation etc.
 		return false, fmt.Errorf("failed to insert user %s: %w", event.Username, err)
@@ -202,7 +186,6 @@ func UsersHandleUpdateEvent(tx *sqlx.Tx, event *UpdateUserEvent) (bool, error) {
 
 	return true, nil
 }
-*/
 
 // -- Getters --
 

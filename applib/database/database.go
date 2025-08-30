@@ -9,18 +9,16 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-
-	"github.com/tomyedwab/yesterday/applib/events"
 )
 
-type EventHandler[T events.Event] func(tx *sqlx.Tx, event T) (bool, error)
+type EventHandler[T interface{}] func(tx *sqlx.Tx, event T) (bool, error)
 type GenericEventHandler func(tx *sqlx.Tx, eventJson []byte) (bool, error)
 
 type Database struct {
-	db             *sqlx.DB
-	handlers       map[string][]GenericEventHandler
-	version        string
-	PublishEventCB func(event events.Event) error
+	db         *sqlx.DB
+	handlers   map[string][]GenericEventHandler
+	version    string
+	eventState *EventState
 }
 
 func Connect(driverName string, dataSourceName, version string) (*Database, error) {
@@ -35,7 +33,7 @@ func Connect(driverName string, dataSourceName, version string) (*Database, erro
 	}, nil
 }
 
-func AddEventHandler[T events.Event](db *Database, eventType string, handler EventHandler[T]) {
+func AddEventHandler[T interface{}](db *Database, eventType string, handler EventHandler[T]) {
 	db.handlers[eventType] = append(db.handlers[eventType], func(tx *sqlx.Tx, eventJson []byte) (bool, error) {
 		var event T
 		if err := json.Unmarshal(eventJson, &event); err != nil {
@@ -52,7 +50,13 @@ func AddGenericEventHandler(db *Database, eventType string, handler GenericEvent
 // Connect creates a new database connection and initializes the database
 // schema.
 func (db *Database) Initialize() error {
-	err := db.InitHandlers()
+	var err error
+	db.eventState, err = NewEventState(db.GetDB())
+	if err != nil {
+		return err
+	}
+
+	err = db.InitHandlers()
 	if err != nil {
 		return err
 	}
@@ -62,36 +66,33 @@ func (db *Database) Initialize() error {
 	return nil
 }
 
-// CreateEvent creates a new event in the database and updates the state of
-// all handlers that are interested in this event.
-/* TODO STOPSHIP
-func (db *Database) CreateEvent(event *events.GenericEvent, eventData []byte, clientId string) (int, error) {
+// HandleEvent updates the state of all handlers that are interested in the
+// event type and updates the current event ID.
+func (db *Database) HandleEvent(eventId int, eventType string, eventData []byte) error {
 	// Start a transaction before writing anything to the DB
 	tx, err := db.db.Beginx()
 	if err != nil {
-		return 0, err
+		return err
 	}
 	defer tx.Rollback()
 
-	// Create a new event, with an event ID
-	eventId, err := EventDBCreateEvent(tx, eventData, clientId)
-	if err != nil {
-		return 0, err
-	}
-
 	// Update all handlers with the new event
-	for _, handlerFunc := range db.handlers[event.GetType()] {
+	for _, handlerFunc := range db.handlers[eventType] {
 		_, err := handlerFunc(tx, eventData)
 		if err != nil {
-			return 0, err
+			return err
 		}
+	}
+
+	err = db.eventState.SetCurrentEventId(eventId, tx)
+	if err != nil {
+		return err
 	}
 
 	// Commit the transaction
 	err = tx.Commit()
-	return eventId, err
+	return err
 }
-*/
 
 func (db *Database) GetDB() *sqlx.DB {
 	return db.db

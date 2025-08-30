@@ -29,9 +29,9 @@ import (
 func main() {
 	var httpProxy *httpsproxy.Proxy // Declare proxy variable for access in shutdown handler
 
+	proxyListenAddr := ":8443"
 	internalSecret := uuid.New().String()
-	// TODO(tom) STOPSHIP temporary stopgap to make internal cross service requests work
-	//os.Setenv("INTERNAL_SECRET", internalSecret)
+	hostName := fmt.Sprintf("www.yesterday.localhost%s", proxyListenAddr)
 
 	// 1. Setup logger
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -58,7 +58,7 @@ func main() {
 
 	// Create EventManager
 	eventsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "events.db"))
-	_, err = events.CreateEventManager(eventsDatabase)
+	eventManager, err := events.CreateEventManager(eventsDatabase)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,8 +67,14 @@ func main() {
 	staticApps := []processes.StaticAppConfig{
 		{
 			InstanceID: "MBtskI6D",
-			HostName:   "admin",
+			HostName:   hostName,
 			PkgPath:    filepath.Join(installDir, "MBtskI6D"),
+			Subscriptions: map[string]bool{
+				"User:Add":            true,
+				"User:UpdatePassword": true,
+				"User:Delete":         true,
+				"User:Update":         true,
+			},
 		},
 	}
 	appProvider := processes.NewAdminInstanceProvider("MBtskI6D", internalSecret, installDir, staticApps)
@@ -166,7 +172,6 @@ func main() {
 	// You can generate self-signed certificates for testing if needed:
 	// openssl genrsa -out server.key 2048
 	// openssl req -new -x509 -sha256 -key server.key -out server.crt -days 3650
-	proxyListenAddr := ":8443"
 	certsDir := os.Getenv("CERTS_DIR")
 	if certsDir == "" {
 		certsDir = "/usr/local/etc/nexushub/certs"
@@ -176,7 +181,7 @@ func main() {
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
-	httpProxy = httpsproxy.NewProxy(proxyListenAddr, fmt.Sprintf("www.yesterday.localhost%s", proxyListenAddr), proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider)
+	httpProxy = httpsproxy.NewProxy(proxyListenAddr, hostName, proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider, eventManager)
 
 	contextFn := func(_ net.Listener) context.Context {
 		return context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)

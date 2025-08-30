@@ -1,10 +1,16 @@
 package processes
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/tomyedwab/yesterday/nexushub/events"
 )
 
 // ProcessLogEntry represents a single log entry from a managed process
@@ -215,6 +221,58 @@ func (mp *ManagedProcess) UpdateEventId(eventId int) {
 		mp.currentEventId = eventId
 		log.Printf("Application %s updated event ID to %d", mp.Instance.InstanceID, eventId)
 	}
+}
+
+func (mp *ManagedProcess) GetExpectedEventId(eventManager *events.EventManager) int {
+	latestEventId := 0
+	for subscription, _ := range mp.Instance.Subscriptions {
+		eventId := eventManager.GetCurrentEventID(subscription)
+		if eventId > latestEventId {
+			latestEventId = eventId
+		}
+	}
+	return latestEventId
+}
+
+func (mp *ManagedProcess) ProcessPendingEvents(eventManager *events.EventManager) error {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if mp.State != StateRunning || mp.currentEventId < 0 {
+		return fmt.Errorf("process is not yet running and healthy")
+	}
+
+	expectedEventId := mp.GetExpectedEventId(eventManager)
+	if expectedEventId <= mp.currentEventId {
+		return nil
+	}
+
+	log.Printf("Process %s has pending events %d - %d", mp.Instance.InstanceID, mp.currentEventId+1, expectedEventId)
+	for eventId := mp.currentEventId + 1; eventId <= expectedEventId; eventId++ {
+		eventType, eventData, err := eventManager.GetEvent(eventId)
+		if err != nil {
+			return err
+		}
+		if mp.Instance.Subscriptions[eventType] {
+			log.Printf("Sending event %d to service %s", eventId, mp.Instance.InstanceID)
+			// Send the event to the service
+			url := fmt.Sprintf("http://localhost:%d/internal/publish_event?id=%d&type=%s", mp.Port, eventId, eventType)
+			resp, err := http.Post(url, "application/json", io.NopCloser(bytes.NewReader([]byte(eventData))))
+			if err != nil {
+				log.Printf("Failed to send event %d to service %s: %v", eventId, mp.Instance.InstanceID, err)
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusCreated {
+				contents, _ := io.ReadAll(resp.Body)
+				log.Printf("Failed to send event %d to service %s: %s", eventId, mp.Instance.InstanceID, contents)
+				return fmt.Errorf("failed to make cross-service request. Got status code %d", resp.StatusCode)
+			}
+			// If we get a 200 response, we can assume the event was processed successfully
+			mp.currentEventId = eventId
+		}
+	}
+	log.Printf("Done processing events. Now at event %d", mp.currentEventId)
+	return nil
 }
 
 // RecordRestart increments the restart count.

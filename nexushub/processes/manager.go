@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tomyedwab/yesterday/nexushub/events"
 )
 
 const (
@@ -274,7 +277,7 @@ func (pm *ProcessManager) GetAppInstanceByHostName(hostname string) (*AppInstanc
 // It returns a copy of the AppInstance (including its dynamically assigned port)
 // if found, otherwise returns nil and an error.
 // This method is thread-safe.
-func (pm *ProcessManager) GetAppInstanceByID(id string) (*AppInstance, int, error) {
+func (pm *ProcessManager) GetAppInstanceByID(id string, eventManager *events.EventManager) (*AppInstance, int, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -284,6 +287,13 @@ func (pm *ProcessManager) GetAppInstanceByID(id string) (*AppInstance, int, erro
 	}
 
 	if process.GetState() == StateRunning { // Ensure the instance is actually running and healthy
+		if eventManager != nil {
+			err := process.ProcessPendingEvents(eventManager)
+			if err != nil {
+				log.Printf("Failed to process pending events for instance ID %s: %v", id, err)
+				return nil, 0, err
+			}
+		}
 		// Return a copy to prevent modification by the caller
 		instanceCopy := process.Instance
 		return &instanceCopy, process.Port, nil

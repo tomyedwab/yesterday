@@ -218,7 +218,7 @@ func (h *DebugHandler) HandleApplicationStatus(w http.ResponseWriter, r *http.Re
 
 	// If application is supposed to be running, check with process manager
 	if debugApp.Status == "running" {
-		if appInstance, port, err := h.processManager.GetAppInstanceByID(appID); err == nil && appInstance != nil {
+		if appInstance, port, err := h.processManager.GetAppInstanceByID(appID, nil); err == nil && appInstance != nil {
 			// Note: GetAppInstanceByID returns the AppInstance config, but we need ManagedProcess for runtime info
 			// For now, we'll use the returned port and indicate the app is running
 			status.Port = port
@@ -322,7 +322,7 @@ func (h *DebugHandler) stopDebugApplicationInstance(debugApp *DebugApplication) 
 	h.logger.Info("Stopping debug application instance", "appId", debugApp.ID)
 
 	// Get the app instance from process manager
-	if appInstance, _, err := h.processManager.GetAppInstanceByID(debugApp.ID); err == nil && appInstance != nil {
+	if appInstance, _, err := h.processManager.GetAppInstanceByID(debugApp.ID, nil); err == nil && appInstance != nil {
 		// Stop the instance (this would be the actual implementation)
 		h.logger.Info("Found running instance, stopping", "appId", debugApp.ID)
 		// The process manager would handle stopping the process

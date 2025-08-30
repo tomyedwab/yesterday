@@ -17,10 +17,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers"
-	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/events"
+	event_handlers "github.com/tomyedwab/yesterday/nexushub/internal/handlers/events"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/login"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
@@ -39,12 +40,22 @@ type Proxy struct {
 	transport      *http.Transport
 	internalSecret string
 	debugHandler   *handlers.DebugHandler
+	eventManager   *events.EventManager
 }
 
 // NewProxy creates and returns a new Proxy instance.
 // It takes the listen address, paths to SSL cert and key files,
 // and a HostnameResolver instance.
-func NewProxy(listenAddr, host, certFile, keyFile, internalSecret string, pm httpsproxy_types.ProcessManagerInterface, instanceProvider httpsproxy_types.AppInstanceProvider) *Proxy {
+func NewProxy(
+	listenAddr,
+	host,
+	certFile,
+	keyFile,
+	internalSecret string,
+	pm httpsproxy_types.ProcessManagerInterface,
+	instanceProvider httpsproxy_types.AppInstanceProvider,
+	eventManager *events.EventManager,
+) *Proxy {
 	dialer := net.Dialer{
 		Timeout:   600 * time.Second,
 		KeepAlive: 600 * time.Second,
@@ -68,6 +79,7 @@ func NewProxy(listenAddr, host, certFile, keyFile, internalSecret string, pm htt
 		transport:      transport,
 		internalSecret: internalSecret,
 		debugHandler:   debugHandler,
+		eventManager:   eventManager,
 	}
 }
 
@@ -175,7 +187,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Event endpoints
 	if r.URL.Path == "/events/publish" {
-		events.HandleEventPublish(w, r)
+		event_handlers.HandleEventPublish(w, r, p.eventManager)
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
@@ -188,7 +200,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if len(parts) > 1 {
 		appID := parts[1]
 		if appID != "" {
-			instance, port, err = p.pm.GetAppInstanceByID(appID)
+			instance, port, err = p.pm.GetAppInstanceByID(appID, p.eventManager)
 			if err != nil {
 				http.Error(w, "Service not found for app ID "+appID, http.StatusNotFound)
 				log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
@@ -355,7 +367,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) GetServiceHost(instanceID string) (string, error) {
-	_, port, err := p.pm.GetAppInstanceByID(instanceID)
+	_, port, err := p.pm.GetAppInstanceByID(instanceID, p.eventManager)
 	if err != nil {
 		return "", err
 	}

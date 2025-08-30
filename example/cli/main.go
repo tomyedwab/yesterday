@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -148,15 +150,27 @@ func main() {
 		if event.Rune() == 99 {
 			// "c" creates a new user
 			// TODO(tom) STOPSHIP make a proper UI affordance
-			clientId := yesterdaygo.GenerateClientID()
-			client.GetEventPublisher().PublishEvent(clientId, CreateUserPublishData{
-				EventPublishData: yesterdaygo.EventPublishData{
-					ClientID: clientId,
-				},
-				Username:     "tom",
-				Salt:         "salt",
-				PasswordHash: "password_hash",
-			})
+			resp, err := client.Post(context.Background(), "/MBtskI6D/api/hash_password", "testpassword", map[string]string{})
+			if err == nil {
+				var respData struct {
+					Salt         string
+					PasswordHash string
+				}
+				err = json.NewDecoder(resp.Body).Decode(&respData)
+				if err == nil {
+					clientId := yesterdaygo.GenerateClientID()
+					client.GetEventPublisher().PublishEvent(clientId, CreateUserPublishData{
+						EventPublishData: yesterdaygo.EventPublishData{
+							ClientID:  clientId,
+							Type:      "User:Add",
+							Timestamp: time.Now().UTC(),
+						},
+						Username:     "tom",
+						Salt:         respData.Salt,
+						PasswordHash: respData.PasswordHash,
+					})
+				}
+			}
 		}
 		return event
 	})

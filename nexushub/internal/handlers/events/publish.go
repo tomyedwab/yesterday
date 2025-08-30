@@ -6,10 +6,11 @@ import (
 	"net/http"
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
+	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
-func HandleEventPublish(w http.ResponseWriter, r *http.Request) {
+func HandleEventPublish(w http.ResponseWriter, r *http.Request, eventManager *events.EventManager) {
 	if r.Method == "OPTIONS" {
 		w.Header().Set("Access-Control-Allow-Methods", "POST")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -17,11 +18,6 @@ func HandleEventPublish(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != "POST" {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-		return
-	}
-	clientId := r.URL.Query().Get("cid")
-	if clientId == "" {
-		http.Error(w, "Missing client ID", http.StatusBadRequest)
 		return
 	}
 
@@ -37,7 +33,11 @@ func HandleEventPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newEventId := 1
+	newEventId, err := eventManager.PublishEvent(publishData.ClientID, publishData.Type, buf)
+	if err != nil {
+		httputils.HandleAPIResponse(w, r, nil, err, http.StatusInternalServerError)
+		return
+	}
 
 	/*
 		newEventId, err := db.CreateEvent(&event, buf, clientId)
@@ -52,5 +52,5 @@ func HandleEventPublish(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	*/
-	httputils.HandleAPIResponse(w, r, map[string]any{"status": "success", "id": newEventId, "clientId": clientId}, err, http.StatusInternalServerError)
+	httputils.HandleAPIResponse(w, r, map[string]any{"status": "success", "id": newEventId, "clientId": publishData.ClientID}, err, http.StatusInternalServerError)
 }

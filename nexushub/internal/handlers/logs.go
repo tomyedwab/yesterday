@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/tomyedwab/yesterday/nexushub/processes"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
+	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
 // LogEntry represents a single log entry from a debug application
@@ -100,7 +100,7 @@ func (h *DebugHandler) HandleLogStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the managed process for this application
-	_, port, err := h.processManager.GetAppInstanceByID(appID)
+	_, port, err := h.processManager.GetAppInstanceByID(appID, nil)
 	if err != nil {
 		h.logger.Error("Failed to get app instance for log streaming", "appId", appID, "error", err)
 		http.Error(w, "Application not found in process manager", http.StatusNotFound)
@@ -240,7 +240,7 @@ func (ls *LogStreamer) streamProcessLogs(client *LogStreamClient, appID string, 
 		if instanceID != appID {
 			return
 		}
-		
+
 		// Send the new log entry to the client
 		select {
 		case client.send <- LogEntry{
@@ -299,7 +299,7 @@ func (ls *LogStreamer) handleClient(client *LogStreamClient, ctx context.Context
 	defer func() {
 		ls.removeClient(client.applicationID, client)
 	}()
-	
+
 	// Send keepalive messages to detect client disconnection
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()

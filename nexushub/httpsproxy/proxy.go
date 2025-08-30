@@ -187,7 +187,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Event endpoints
 	if r.URL.Path == "/events/publish" {
-		event_handlers.HandleEventPublish(w, r, p.eventManager)
+		event_handlers.HandleEventPublish(w, r, p.eventManager, p.pm)
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
@@ -200,7 +200,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if len(parts) > 1 {
 		appID := parts[1]
 		if appID != "" {
-			instance, port, err = p.pm.GetAppInstanceByID(appID, p.eventManager)
+			instance, port, err = p.pm.GetAppInstanceByID(appID)
 			if err != nil {
 				http.Error(w, "Service not found for app ID "+appID, http.StatusNotFound)
 				log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
@@ -367,7 +367,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) GetServiceHost(instanceID string) (string, error) {
-	_, port, err := p.pm.GetAppInstanceByID(instanceID, p.eventManager)
+	_, port, err := p.pm.GetAppInstanceByID(instanceID)
 	if err != nil {
 		return "", err
 	}

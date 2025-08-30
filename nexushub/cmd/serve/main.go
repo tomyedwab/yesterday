@@ -106,6 +106,7 @@ func main() {
 		RestartBackoffMax:      15 * time.Second,
 		GracefulShutdownPeriod: 5 * time.Second,
 		SubprocessWorkDir:      projectRoot, // Processes will run from the project root
+		EventManager:           eventManager,
 	}
 
 	processManager, err := processes.NewProcessManager(pmConfig, internalSecret)

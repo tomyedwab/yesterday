@@ -50,7 +50,6 @@ func main() {
 			http.Error(w, fmt.Sprintf("Failed to unmarshal password: %v", err), http.StatusInternalServerError)
 			return
 		}
-		log.Printf("Received password: %s", password)
 
 		// Create random salt
 		salt := uuid.New().String()

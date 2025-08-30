@@ -1,7 +1,6 @@
 package types
 
 import (
-	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
@@ -10,7 +9,9 @@ import (
 // It should provide a way to get an AppInstance by its hostname.
 type ProcessManagerInterface interface {
 	GetAppInstanceByHostName(hostname string) (*processes.AppInstance, int, error)
-	GetAppInstanceByID(id string, eventManager *events.EventManager) (*processes.AppInstance, int, error) // Added for AppID lookup
+	GetAppInstanceByID(id string) (*processes.AppInstance, int, error) // Added for AppID lookup
+
+	EventPublished()
 
 	// Log streaming methods for debug applications
 	GetProcessLogs(instanceID string, fromID int64) ([]processes.ProcessLogEntry, error)

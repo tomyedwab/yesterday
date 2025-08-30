@@ -48,6 +48,7 @@ type ProcessManager struct {
 	portManager   *PortManager
 	healthChecker HealthChecker
 	logger        *slog.Logger
+	eventManager  *events.EventManager
 
 	// Configuration
 	healthCheckInterval    time.Duration
@@ -58,8 +59,9 @@ type ProcessManager struct {
 	internalSecret         string        // Secret for authorizing cross-service requests
 
 	// Control channels
-	stopChan chan struct{}  // Signals the manager to stop
-	wg       sync.WaitGroup // Waits for goroutines to finish
+	stopChan  chan struct{}  // Signals the manager to stop
+	eventChan chan struct{}  // Signals the manager that new events have been published
+	wg        sync.WaitGroup // Waits for goroutines to finish
 
 	// Working directory for subprocesses
 	subprocessWorkDir string
@@ -80,6 +82,7 @@ type Config struct {
 	PortManager            *PortManager
 	HealthChecker          HealthChecker // Optional, defaults to HTTPHealthChecker
 	Logger                 *slog.Logger  // Optional, defaults to slog.Default()
+	EventManager           *events.EventManager
 	HealthCheckInterval    time.Duration // Optional, defaults to 15s
 	HealthCheckTimeout     time.Duration // Optional, for default HTTPHealthChecker, defaults to 5s
 	ConsecutiveFailures    int           // Optional, defaults to 3
@@ -157,12 +160,14 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 		portManager:              config.PortManager,
 		healthChecker:            healthChecker,
 		logger:                   logger.With("component", "ProcessManager"),
+		eventManager:             config.EventManager,
 		healthCheckInterval:      hcInterval,
 		consecutiveFailures:      consFailures,
 		restartBackoffInitial:    restartInitial,
 		restartBackoffMax:        restartMax,
 		gracefulShutdownPeriod:   gracefulShutdown,
 		stopChan:                 make(chan struct{}),
+		eventChan:                make(chan struct{}),
 		subprocessWorkDir:        workDir,
 		internalSecret:           internalSecret,
 		onFirstReconcileComplete: config.OnFirstReconcileComplete,
@@ -277,7 +282,7 @@ func (pm *ProcessManager) GetAppInstanceByHostName(hostname string) (*AppInstanc
 // It returns a copy of the AppInstance (including its dynamically assigned port)
 // if found, otherwise returns nil and an error.
 // This method is thread-safe.
-func (pm *ProcessManager) GetAppInstanceByID(id string, eventManager *events.EventManager) (*AppInstance, int, error) {
+func (pm *ProcessManager) GetAppInstanceByID(id string) (*AppInstance, int, error) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -287,8 +292,8 @@ func (pm *ProcessManager) GetAppInstanceByID(id string, eventManager *events.Eve
 	}
 
 	if process.GetState() == StateRunning { // Ensure the instance is actually running and healthy
-		if eventManager != nil {
-			err := process.ProcessPendingEvents(eventManager)
+		if pm.eventManager != nil {
+			err := process.ProcessPendingEvents(pm.eventManager)
 			if err != nil {
 				log.Printf("Failed to process pending events for instance ID %s: %v", id, err)
 				return nil, 0, err
@@ -446,6 +451,9 @@ func (pm *ProcessManager) healthMonitorLoop(ctx context.Context) {
 		case <-pm.stopChan:
 			pm.logger.Info("Health monitor loop stopping.")
 			return
+		case <-pm.eventChan:
+			pm.logger.Info("New event published. Processing pending events.")
+			pm.processPendingEvents(ctx)
 		case <-ctx.Done():
 			pm.logger.Info("Health monitor loop context cancelled.")
 			return
@@ -453,6 +461,11 @@ func (pm *ProcessManager) healthMonitorLoop(ctx context.Context) {
 			pm.performHealthChecks(ctx)
 		}
 	}
+}
+
+// EventPublished signals that a new event has been published.
+func (pm *ProcessManager) EventPublished() {
+	pm.eventChan <- struct{}{}
 }
 
 // reconcileState compares the desired application instances with the actual running processes
@@ -567,6 +580,15 @@ func (pm *ProcessManager) reconcileState(ctx context.Context) error {
 	pm.checkAndFireFirstReconcileCallback()
 
 	return nil
+}
+
+func (pm *ProcessManager) processPendingEvents(ctx context.Context) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	for _, state := range pm.actualState {
+		state.ProcessPendingEvents(pm.eventManager)
+	}
 }
 
 // startProcess handles the logic for launching a new subprocess.

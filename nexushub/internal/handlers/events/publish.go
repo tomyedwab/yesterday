@@ -7,10 +7,11 @@ import (
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	"github.com/tomyedwab/yesterday/nexushub/events"
+	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
-func HandleEventPublish(w http.ResponseWriter, r *http.Request, eventManager *events.EventManager) {
+func HandleEventPublish(w http.ResponseWriter, r *http.Request, eventManager *events.EventManager, processManager httpsproxy_types.ProcessManagerInterface) {
 	if r.Method == "OPTIONS" {
 		w.Header().Set("Access-Control-Allow-Methods", "POST")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -39,18 +40,7 @@ func HandleEventPublish(w http.ResponseWriter, r *http.Request, eventManager *ev
 		return
 	}
 
-	/*
-		newEventId, err := db.CreateEvent(&event, buf, clientId)
-		if err == nil {
-			eventState.SetCurrentEventId(newEventId)
-		}
-		if err != nil {
-			// Special case for duplicate errors. We return a 200 in this case.
-			if duplicateErr, ok := err.(*DuplicateEventError); ok {
-				httputils.HandleAPIResponse(w, r, map[string]any{"status": "duplicate", "id": duplicateErr.Id, "clientId": clientId}, nil, http.StatusOK)
-				return
-			}
-		}
-	*/
+	processManager.EventPublished()
+
 	httputils.HandleAPIResponse(w, r, map[string]any{"status": "success", "id": newEventId, "clientId": publishData.ClientID}, err, http.StatusInternalServerError)
 }

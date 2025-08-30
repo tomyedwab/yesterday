@@ -100,7 +100,7 @@ func (h *DebugHandler) HandleLogStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the managed process for this application
-	_, port, err := h.processManager.GetAppInstanceByID(appID, nil)
+	_, port, err := h.processManager.GetAppInstanceByID(appID)
 	if err != nil {
 		h.logger.Error("Failed to get app instance for log streaming", "appId", appID, "error", err)
 		http.Error(w, "Application not found in process manager", http.StatusNotFound)

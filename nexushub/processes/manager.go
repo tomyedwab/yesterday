@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/nexushub/events"
 )
 
@@ -34,6 +35,11 @@ type AppInstanceProvider interface {
 
 // LogCallback is a function type for handling new log entries
 type LogCallback func(instanceID string, logEntry ProcessLogEntry)
+
+type EventCallbackInfo struct {
+	InstanceID string
+	EventID    int
+}
 
 // ProcessManager orchestrates the lifecycle of multiple servicehost subprocesses.
 // It ensures that the actual running processes match a desired state, monitors their health,
@@ -74,6 +80,9 @@ type ProcessManager struct {
 	// Log handling
 	logCallbacks []LogCallback // Callbacks to notify when new log entries are added
 	logMu        sync.RWMutex  // Protects log-related fields
+
+	// Process event state callbacks
+	eventStateCallbacks map[string]chan EventCallbackInfo
 }
 
 // Config holds configuration options for the ProcessManager.
@@ -222,6 +231,50 @@ func (pm *ProcessManager) IsFirstReconcileComplete() bool {
 	return pm.firstReconcileComplete
 }
 
+func (pm *ProcessManager) AddEventStateCallback() (string, chan EventCallbackInfo) {
+	pm.callbackMu.Lock()
+	defer pm.callbackMu.Unlock()
+
+	if pm.eventStateCallbacks == nil {
+		pm.eventStateCallbacks = make(map[string]chan EventCallbackInfo)
+	}
+
+	cbID := uuid.New().String()
+	callbackChan := make(chan EventCallbackInfo)
+	pm.eventStateCallbacks[cbID] = callbackChan
+
+	return cbID, callbackChan
+}
+
+func (pm *ProcessManager) RemoveEventStateCallback(cbID string) {
+	pm.callbackMu.Lock()
+	defer pm.callbackMu.Unlock()
+
+	delete(pm.eventStateCallbacks, cbID)
+}
+
+func (pm *ProcessManager) GetEventState(id string) int {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	process, exists := pm.actualState[id]
+	if !exists {
+		return -1
+	}
+
+	return process.GetEventId()
+}
+
+func (pm *ProcessManager) triggerEventStateCallbacks(instanceID string, eventID int) {
+	pm.callbackMu.Lock()
+	defer pm.callbackMu.Unlock()
+
+	info := EventCallbackInfo{InstanceID: instanceID, EventID: eventID}
+	for _, callbackChan := range pm.eventStateCallbacks {
+		callbackChan <- info
+	}
+}
+
 // Run starts the process manager's reconciliation and health monitoring loops.
 // It blocks until Stop() is called or the context is cancelled.
 func (pm *ProcessManager) Run(ctx context.Context) {
@@ -293,10 +346,13 @@ func (pm *ProcessManager) GetAppInstanceByID(id string) (*AppInstance, int, erro
 
 	if process.GetState() == StateRunning { // Ensure the instance is actually running and healthy
 		if pm.eventManager != nil {
-			err := process.ProcessPendingEvents(pm.eventManager)
+			newEventID, err := process.ProcessPendingEvents(pm.eventManager)
 			if err != nil {
 				log.Printf("Failed to process pending events for instance ID %s: %v", id, err)
 				return nil, 0, err
+			}
+			if newEventID != 0 {
+				pm.triggerEventStateCallbacks(process.Instance.InstanceID, newEventID)
 			}
 		}
 		// Return a copy to prevent modification by the caller
@@ -587,7 +643,10 @@ func (pm *ProcessManager) processPendingEvents(ctx context.Context) {
 	defer pm.mu.Unlock()
 
 	for _, state := range pm.actualState {
-		state.ProcessPendingEvents(pm.eventManager)
+		newEventId, err := state.ProcessPendingEvents(pm.eventManager)
+		if err == nil && newEventId > 0 {
+			pm.triggerEventStateCallbacks(state.Instance.InstanceID, newEventId)
+		}
 	}
 }
 
@@ -932,6 +991,7 @@ func (pm *ProcessManager) checkAndUpdateHealth(ctx context.Context, process *Man
 	currentInternalState := process.GetState() // Get state from the locked process object
 
 	process.UpdateEventId(eventId)
+	pm.triggerEventStateCallbacks(process.Instance.InstanceID, eventId)
 
 	if newState == StateRunning {
 		if currentInternalState != StateRunning {

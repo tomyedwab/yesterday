@@ -12,6 +12,9 @@ type ProcessManagerInterface interface {
 	GetAppInstanceByID(id string) (*processes.AppInstance, int, error) // Added for AppID lookup
 
 	EventPublished()
+	AddEventStateCallback() (string, chan processes.EventCallbackInfo)
+	RemoveEventStateCallback(cbID string)
+	GetEventState(id string) int
 
 	// Log streaming methods for debug applications
 	GetProcessLogs(instanceID string, fromID int64) ([]processes.ProcessLogEntry, error)

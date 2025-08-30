@@ -12,30 +12,33 @@ import (
 
 // DataProvider provides type-safe data access with automatic refresh on event changes
 type DataProvider[T any] struct {
-	client          *Client
-	uri             string
-	params          map[string]interface{}
-	data            T
-	lastEventNumber int64
-	refreshCallback func(T)
-	mu              sync.RWMutex // Protects data, lastEventNumber, and refreshCallback
-	//eventSubscription <-chan int64
-	ctx            context.Context
-	cancel         context.CancelFunc
-	isSubscribed   bool
-	subscriptionMu sync.Mutex // Protects subscription state
+	client            *Client
+	instanceID        string
+	uri               string
+	params            map[string]interface{}
+	data              T
+	lastEventId       int
+	refreshCallback   func(T)
+	mu                sync.RWMutex // Protects data, lastEventId, and refreshCallback
+	eventSubscription <-chan int
+	ctx               context.Context
+	cancel            context.CancelFunc
+	isSubscribed      bool
+	subscriptionMu    sync.Mutex // Protects subscription state
 }
 
 // NewDataProvider creates a new generic data provider
-func NewDataProvider[T any](client *Client, uri string, params map[string]interface{}) *DataProvider[T] {
+func NewDataProvider[T any](client *Client, instanceID string, uri string, params map[string]interface{}) *DataProvider[T] {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &DataProvider[T]{
-		client: client,
-		uri:    uri,
-		params: params,
-		ctx:    ctx,
-		cancel: cancel,
+		client:      client,
+		uri:         uri,
+		instanceID:  instanceID,
+		lastEventId: -1,
+		params:      params,
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 }
 
@@ -44,11 +47,11 @@ func (dp *DataProvider[T]) Get() (T, error) {
 	var zero T
 
 	// Check if we need to refresh based on current event number
-	//poller := dp.client.GetEventPoller()
-	var currentEventNumber int64 = 1 // poller.GetCurrentEventNumber()
+	poller := dp.client.GetEventPoller()
+	currentEventId := poller.GetCurrentEventId(dp.instanceID)
 
 	dp.mu.RLock()
-	needsRefresh := dp.lastEventNumber < currentEventNumber || dp.lastEventNumber == 0
+	needsRefresh := dp.lastEventId < currentEventId || dp.lastEventId == -1
 	cachedData := dp.data
 	dp.mu.RUnlock()
 
@@ -69,7 +72,7 @@ func (dp *DataProvider[T]) Get() (T, error) {
 // Refresh manually refreshes the data from the API
 func (dp *DataProvider[T]) Refresh() error {
 	// Build the request URL with parameters
-	requestURL := dp.uri
+	requestURL := fmt.Sprintf("/%s/%s", dp.instanceID, dp.uri)
 	if len(dp.params) > 0 {
 		values := url.Values{}
 		for key, value := range dp.params {
@@ -99,13 +102,12 @@ func (dp *DataProvider[T]) Refresh() error {
 	}
 
 	// Update the cached data and event number
-	//poller := dp.client.GetEventPoller()
-	//currentEventNumber := poller.GetCurrentEventNumber()
-	var currentEventNumber int64 = 1
+	poller := dp.client.GetEventPoller()
+	currentEventId := poller.GetCurrentEventId(dp.instanceID)
 
 	dp.mu.Lock()
 	dp.data = newData
-	dp.lastEventNumber = currentEventNumber
+	dp.lastEventId = currentEventId
 	callback := dp.refreshCallback
 	dp.mu.Unlock()
 
@@ -132,8 +134,8 @@ func (dp *DataProvider[T]) Subscribe(callback func(T)) error {
 	dp.mu.Unlock()
 
 	// Subscribe to event notifications
-	//poller := dp.client.GetEventPoller()
-	//dp.eventSubscription = poller.SubscribeToEvents()
+	poller := dp.client.GetEventPoller()
+	dp.eventSubscription = poller.SubscribeToEvents(dp.instanceID)
 	dp.isSubscribed = true
 
 	// Start the event listening goroutine
@@ -164,21 +166,19 @@ func (dp *DataProvider[T]) Unsubscribe() {
 func (dp *DataProvider[T]) eventLoop() {
 	for {
 		select {
-		/*
-			case eventNumber := <-dp.eventSubscription:
-				// Check if we need to refresh
-				dp.mu.RLock()
-				needsRefresh := dp.lastEventNumber < eventNumber
-				dp.mu.RUnlock()
+		case eventId := <-dp.eventSubscription:
+			// Check if we need to refresh
+			dp.mu.RLock()
+			needsRefresh := dp.lastEventId < eventId
+			dp.mu.RUnlock()
 
-				if needsRefresh {
-					// Refresh data and call callback
-					if err := dp.Refresh(); err != nil {
-						// In a production system, you might want to log this error
-						continue
-					}
+			if needsRefresh {
+				// Refresh data and call callback
+				if err := dp.Refresh(); err != nil {
+					// In a production system, you might want to log this error
+					continue
 				}
-		*/
+			}
 		case <-dp.ctx.Done():
 			return // Subscription cancelled
 		}
@@ -186,10 +186,10 @@ func (dp *DataProvider[T]) eventLoop() {
 }
 
 // GetLastEventNumber returns the event number when data was last fetched
-func (dp *DataProvider[T]) GetLastEventNumber() int64 {
+func (dp *DataProvider[T]) GetLastEventId() int {
 	dp.mu.RLock()
 	defer dp.mu.RUnlock()
-	return dp.lastEventNumber
+	return dp.lastEventId
 }
 
 // GetURI returns the API endpoint URI

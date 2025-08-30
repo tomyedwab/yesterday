@@ -223,6 +223,12 @@ func (mp *ManagedProcess) UpdateEventId(eventId int) {
 	}
 }
 
+func (mp *ManagedProcess) GetEventId() int {
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	return mp.currentEventId
+}
+
 func (mp *ManagedProcess) GetExpectedEventId(eventManager *events.EventManager) int {
 	latestEventId := 0
 	for subscription, _ := range mp.Instance.Subscriptions {
@@ -234,23 +240,23 @@ func (mp *ManagedProcess) GetExpectedEventId(eventManager *events.EventManager) 
 	return latestEventId
 }
 
-func (mp *ManagedProcess) ProcessPendingEvents(eventManager *events.EventManager) error {
+func (mp *ManagedProcess) ProcessPendingEvents(eventManager *events.EventManager) (int, error) {
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
 	if mp.State != StateRunning || mp.currentEventId < 0 {
-		return fmt.Errorf("process is not yet running and healthy")
+		return 0, fmt.Errorf("process is not yet running and healthy")
 	}
 
 	expectedEventId := mp.GetExpectedEventId(eventManager)
 	if expectedEventId <= mp.currentEventId {
-		return nil
+		return 0, nil
 	}
 
 	log.Printf("Process %s has pending events %d - %d", mp.Instance.InstanceID, mp.currentEventId+1, expectedEventId)
 	for eventId := mp.currentEventId + 1; eventId <= expectedEventId; eventId++ {
 		eventType, eventData, err := eventManager.GetEvent(eventId)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if mp.Instance.Subscriptions[eventType] {
 			log.Printf("Sending event %d to service %s", eventId, mp.Instance.InstanceID)
@@ -259,20 +265,20 @@ func (mp *ManagedProcess) ProcessPendingEvents(eventManager *events.EventManager
 			resp, err := http.Post(url, "application/json", io.NopCloser(bytes.NewReader([]byte(eventData))))
 			if err != nil {
 				log.Printf("Failed to send event %d to service %s: %v", eventId, mp.Instance.InstanceID, err)
-				return err
+				return 0, err
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode != http.StatusCreated {
 				contents, _ := io.ReadAll(resp.Body)
 				log.Printf("Failed to send event %d to service %s: %s", eventId, mp.Instance.InstanceID, contents)
-				return fmt.Errorf("failed to make cross-service request. Got status code %d", resp.StatusCode)
+				return 0, fmt.Errorf("failed to make cross-service request. Got status code %d", resp.StatusCode)
 			}
 			// If we get a 200 response, we can assume the event was processed successfully
 			mp.currentEventId = eventId
 		}
 	}
 	log.Printf("Done processing events. Now at event %d", mp.currentEventId)
-	return nil
+	return mp.currentEventId, nil
 }
 
 // RecordRestart increments the restart count.

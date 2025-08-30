@@ -191,6 +191,11 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
+	if r.URL.Path == "/events/poll" {
+		event_handlers.HandleEventPoll(w, r, p.pm)
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
+		return
+	}
 
 	// Look for an application ID in the path string
 	var instance *processes.AppInstance

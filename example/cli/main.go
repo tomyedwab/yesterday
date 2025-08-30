@@ -86,6 +86,7 @@ type CreateUserPublishData struct {
 type MainPage struct {
 	provider *yesterdaygo.DataProvider[UsersData]
 	pages    *tview.Pages
+	users    *tview.List
 }
 
 func (m *MainPage) update() {
@@ -99,11 +100,15 @@ func (m *MainPage) update() {
 		m.pages.AddPage("Main", errorText, true, true)
 	}
 
-	var usersList = tview.NewList().ShowSecondaryText(false)
-	for index, user := range users.Users {
-		usersList.AddItem(user.Username, fmt.Sprintf("ID %d", user.ID), rune(49+index), nil)
+	if m.users == nil {
+		m.users = tview.NewList().ShowSecondaryText(false)
+		m.pages.AddPage("Main", m.users, true, true)
+	} else {
+		m.users.Clear()
 	}
-	m.pages.AddPage("Main", usersList, true, true)
+	for index, user := range users.Users {
+		m.users.AddItem(user.Username, fmt.Sprintf("ID %d", user.ID), rune(49+index), nil)
+	}
 }
 
 func main() {
@@ -126,9 +131,15 @@ func main() {
 	var app = tview.NewApplication()
 	var pages = tview.NewPages()
 	var mainPage = &MainPage{
-		provider: yesterdaygo.NewDataProvider[UsersData](client, "/MBtskI6D/api/users", map[string]interface{}{}),
+		provider: yesterdaygo.NewDataProvider[UsersData](client, "MBtskI6D", "api/users", nil),
 		pages:    pages,
 	}
+	mainPage.provider.Subscribe(func(_ UsersData) {
+		app.QueueUpdateDraw(func() {
+			mainPage.update()
+			pages.SwitchToPage("Main")
+		})
+	})
 
 	pages.AddPage("Main", centerBox(tview.NewTextView().SetText("Welcome to Yesterday!"), 35, 9), true, true)
 	createLoginPages(client, pages, mainPage)

@@ -20,70 +20,67 @@ type EventPublishData struct {
 
 // EventPoller manages event number polling for detecting data changes
 type EventPoller struct {
-	client             *Client
-	currentEventNumber int64
-	pollInterval       time.Duration
-	subscribers        []chan int64
-	stopCh             chan struct{}
-	mu                 sync.RWMutex // Protects currentEventNumber and subscribers
-	running            bool
-	runningMu          sync.Mutex // Protects running state
-}
-
-// PollResponse represents the response from the poll endpoint
-type PollResponse struct {
-	EventNumber int64 `json:"event_number"`
+	client          *Client
+	currentEventIds map[string]int
+	pollInterval    time.Duration
+	subscribers     map[string][]chan int
+	stopCh          chan struct{}
+	mu              sync.RWMutex // Protects currentEventNumber and subscribers
+	running         bool
+	runningMu       sync.Mutex // Protects running state
 }
 
 // NewEventPoller creates a new event poller for the given client
 func NewEventPoller(client *Client) *EventPoller {
-	return &EventPoller{
-		client:       client,
-		pollInterval: 5 * time.Second, // Default 5 second interval
-		subscribers:  make([]chan int64, 0),
-		stopCh:       make(chan struct{}),
+	poller := &EventPoller{
+		client:          client,
+		currentEventIds: make(map[string]int),
+		pollInterval:    5 * time.Second, // Default 5 second interval
+		subscribers:     make(map[string][]chan int),
+		stopCh:          make(chan struct{}),
 	}
+	poller.StartEventPolling()
+	return poller
 }
 
 // GetCurrentEventNumber returns the current event number in a thread-safe manner
-func (ep *EventPoller) GetCurrentEventNumber() int64 {
+func (ep *EventPoller) GetCurrentEventId(instanceID string) int {
 	ep.mu.RLock()
 	defer ep.mu.RUnlock()
-	return ep.currentEventNumber
+	return ep.currentEventIds[instanceID]
 }
 
 // setCurrentEventNumber sets the current event number and notifies subscribers
-func (ep *EventPoller) setCurrentEventNumber(eventNumber int64) {
+func (ep *EventPoller) setCurrentEventIds(eventIds map[string]int) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	if eventNumber <= ep.currentEventNumber {
-		return // No change or older event
-	}
+	for instanceID, eventId := range eventIds {
+		if eventId <= ep.currentEventIds[instanceID] {
+			continue // No change or older event
+		}
 
-	ep.currentEventNumber = eventNumber
+		ep.client.Log().Printf("App %s has new event ID %d", instanceID, eventId)
+		ep.currentEventIds[instanceID] = eventId
 
-	// Notify all subscribers of the new event number
-	for _, subscriber := range ep.subscribers {
-		select {
-		case subscriber <- eventNumber:
-		default:
-			// Non-blocking send - if subscriber can't receive, skip
+		// Notify all subscribers of the new event number
+		for _, subscriber := range ep.subscribers[instanceID] {
+			select {
+			case subscriber <- eventId:
+			default:
+				// Non-blocking send - if subscriber can't receive, skip
+			}
 		}
 	}
 }
 
 // StartEventPolling starts the background event polling goroutine
-func (ep *EventPoller) StartEventPolling(interval time.Duration) error {
+func (ep *EventPoller) StartEventPolling() error {
 	ep.runningMu.Lock()
 	defer ep.runningMu.Unlock()
 
 	if ep.running {
 		return fmt.Errorf("event polling is already running")
-	}
-
-	if interval > 0 {
-		ep.pollInterval = interval
 	}
 
 	ep.running = true
@@ -109,20 +106,27 @@ func (ep *EventPoller) StopEventPolling() {
 
 	// Close all subscriber channels
 	ep.mu.Lock()
-	for _, subscriber := range ep.subscribers {
-		close(subscriber)
+	for _, subscribers := range ep.subscribers {
+		for _, subscriber := range subscribers {
+			close(subscriber)
+		}
 	}
-	ep.subscribers = make([]chan int64, 0)
+	ep.subscribers = make(map[string][]chan int)
 	ep.mu.Unlock()
 }
 
 // SubscribeToEvents returns a channel that receives event number updates
-func (ep *EventPoller) SubscribeToEvents() <-chan int64 {
+func (ep *EventPoller) SubscribeToEvents(instanceID string) <-chan int {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	ch := make(chan int64, 10) // Buffered channel to prevent blocking
-	ep.subscribers = append(ep.subscribers, ch)
+	// Make sure we are polling for events for this instance
+	if _, ok := ep.currentEventIds[instanceID]; !ok {
+		ep.currentEventIds[instanceID] = 0
+	}
+
+	ch := make(chan int, 10) // Buffered channel to prevent blocking
+	ep.subscribers[instanceID] = append(ep.subscribers[instanceID], ch)
 
 	return ch
 }
@@ -147,42 +151,45 @@ func (ep *EventPoller) pollLoop() {
 
 // performPoll performs a single poll request to the API
 func (ep *EventPoller) performPoll() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if len(ep.currentEventIds) == 0 {
+		ep.client.Log().Printf("No event IDs to poll")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	currentEventNumber := ep.GetCurrentEventNumber()
-
-	// Create the poll URL with the current event number
-	pollURL := fmt.Sprintf("/api/poll?e=%d", currentEventNumber)
-
-	resp, err := ep.client.Get(ctx, pollURL, nil)
+	ep.client.Log().Printf("POLL: Polling for events...")
+	resp, err := ep.client.Post(ctx, "/events/poll", ep.currentEventIds, nil)
 	if err != nil {
 		// Log error but continue polling
-		// In a production implementation, you might want to use a proper logger
+		ep.client.Log().Printf("POLL: Error: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	// Handle 304 Not Modified - no new events
 	if resp.StatusCode == http.StatusNotModified {
+		ep.client.Log().Printf("POLL: No new events")
 		return
 	}
 
 	// Handle successful response
 	if resp.StatusCode == http.StatusOK {
-		var pollResponse PollResponse
+		var pollResponse map[string]int
 		if err := json.NewDecoder(resp.Body).Decode(&pollResponse); err != nil {
 			// Log error but continue polling
+			ep.client.Log().Printf("POLL: Invalid response: %v", err)
 			return
 		}
 
-		// Update event number if it has changed
-		ep.setCurrentEventNumber(pollResponse.EventNumber)
+		// Update event IDs if they have changed
+		ep.setCurrentEventIds(pollResponse)
 		return
+	} else {
+		// Handle other status codes as errors
+		// Log error but continue polling
+		ep.client.Log().Printf("POLL: Unexpected status: %d", resp.StatusCode)
 	}
-
-	// Handle other status codes as errors
-	// Log error but continue polling
 }
 
 // IsRunning returns whether the event poller is currently running
@@ -206,8 +213,8 @@ func (ep *EventPoller) GetPollInterval() time.Duration {
 }
 
 // WaitForEvent waits for the next event number change with a timeout
-func (ep *EventPoller) WaitForEvent(ctx context.Context) (int64, error) {
-	eventCh := ep.SubscribeToEvents()
+func (ep *EventPoller) WaitForEvent(ctx context.Context, instanceID string) (int, error) {
+	eventCh := ep.SubscribeToEvents(instanceID)
 
 	select {
 	case eventNumber := <-eventCh:
@@ -215,11 +222,4 @@ func (ep *EventPoller) WaitForEvent(ctx context.Context) (int64, error) {
 	case <-ctx.Done():
 		return 0, ctx.Err()
 	}
-}
-
-// GetSubscriberCount returns the number of active event subscribers
-func (ep *EventPoller) GetSubscriberCount() int {
-	ep.mu.RLock()
-	defer ep.mu.RUnlock()
-	return len(ep.subscribers)
 }

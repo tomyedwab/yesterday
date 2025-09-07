@@ -19,8 +19,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
+	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/middleware"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers"
+	app_handlers "github.com/tomyedwab/yesterday/nexushub/internal/handlers/applications"
 	event_handlers "github.com/tomyedwab/yesterday/nexushub/internal/handlers/events"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/login"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
@@ -122,6 +124,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Handle debug API endpoints first
 	if strings.HasPrefix(r.URL.Path, "/debug/application") {
+		// TODO(tom) STOPSHIP deprecate all this
 		if r.URL.Path == "/debug/application" && r.Method == http.MethodPost {
 			p.debugHandler.HandleCreateApplication(w, r)
 			return
@@ -170,29 +173,75 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Path == "/public/login" {
-		login.HandleLogin(w, r, adminHost)
+		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+			login.HandleLogin(w, r, adminHost)
+		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 	if r.URL.Path == "/public/logout" {
-		login.HandleLogout(w, r)
+		middleware.CorsMiddleware(w, r, login.HandleLogout)
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 	if r.URL.Path == "/public/access_token" {
-		login.HandleAccessToken(w, r, adminHost)
+		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+			login.HandleAccessToken(w, r, adminHost)
+		})
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
+		return
+	}
+
+	// Validate authorization for API endpoints
+	if r.Method != "OPTIONS" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s %s => 401 [Missing token]", traceID, r.Host, r.URL.Path)
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+
+		valid := token == p.internalSecret
+		if !valid {
+			valid = access.ValidateAccessToken(token)
+		}
+		if !valid {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			log.Printf("<%s> %s %s => 401 [Invalid token]", traceID, r.Host, r.URL.Path)
+			return
+		}
+	}
+
+	// Application registration endpoints
+	if r.URL.Path == "/apps/register" {
+		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+			app_handlers.HandleRegistration(w, r)
+		})
+		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
+		return
+	}
+	if r.URL.Path == "/apps/install" {
+		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+			app_handlers.HandleInstall(w, r)
+		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 
 	// Event endpoints
 	if r.URL.Path == "/events/publish" {
-		event_handlers.HandleEventPublish(w, r, p.eventManager, p.pm)
+		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+			event_handlers.HandleEventPublish(w, r, p.eventManager, p.pm)
+		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 	if r.URL.Path == "/events/poll" {
-		event_handlers.HandleEventPoll(w, r, p.pm)
+		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+			event_handlers.HandleEventPoll(w, r, p.pm)
+		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
@@ -221,26 +270,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if instance != nil {
-		// Validate authorization for API endpoints
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			log.Printf("<%s> %s %s => 401 [Missing token]", traceID, r.Host, r.URL.Path)
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-
-		valid := token == p.internalSecret
-		if !valid {
-			valid = access.ValidateAccessToken(token, instance.InstanceID)
-		}
-		if !valid {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			log.Printf("<%s> %s %s => 401 [Invalid token]", traceID, r.Host, r.URL.Path)
-			return
-		}
-
 		// Token is valid, proxy the request
 		targetURL := &url.URL{
 			Scheme: "http", // Backend services are HTTP

@@ -29,6 +29,10 @@ func NewPackageManager() *PackageManager {
 	}
 }
 
+func (pm *PackageManager) GetPkgDir() string {
+	return pm.pkgDir
+}
+
 func (pm *PackageManager) GetInstallDir() string {
 	return pm.installDir
 }

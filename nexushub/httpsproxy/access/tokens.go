@@ -21,7 +21,7 @@ func CreateAccessToken(response *types.AccessTokenResponse) {
 	}
 }
 
-func ValidateAccessToken(token, applicationID string) bool {
+func ValidateAccessToken(token string) bool {
 	_, ok := AccessTokenStore[token]
 	if !ok {
 		return false
@@ -30,6 +30,5 @@ func ValidateAccessToken(token, applicationID string) bool {
 		delete(AccessTokenStore, token)
 		return false
 	}
-	// TODO: Verify application-level access permissions
 	return true
 }

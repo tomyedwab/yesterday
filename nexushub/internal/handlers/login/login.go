@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
@@ -51,7 +50,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request, adminServiceHost string
 		return
 	}
 
-	domain := os.Getenv("HOST")
+	domain := r.Host
 	// Strip port number if it's in the host string
 	if strings.Contains(domain, ":") {
 		domain = strings.Split(domain, ":")[0]

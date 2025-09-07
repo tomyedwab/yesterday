@@ -100,7 +100,7 @@ func (h *DebugHandler) HandleInstallDevApplication(w http.ResponseWriter, r *htt
 	}
 
 	// Install the package using the package manager
-	packageManager := packages.NewPackageManager()
+	packageManager, _ := packages.NewPackageManager()
 
 	// Copy package to package manager directory with expected naming
 	if err := h.preparePackageForInstallation(debugApp, packageManager); err != nil {
@@ -110,7 +110,7 @@ func (h *DebugHandler) HandleInstallDevApplication(w http.ResponseWriter, r *htt
 	}
 
 	// Install the package
-	if err := packageManager.InstallPackage(debugApp.AppID, appID); err != nil {
+	if err := packageManager.InstallPackage(debugApp.AppID, "", appID); err != nil {
 		h.logger.Error("Package installation failed", "appId", appID, "error", err)
 		http.Error(w, fmt.Sprintf("Installation failed: %v", err), http.StatusInternalServerError)
 		return

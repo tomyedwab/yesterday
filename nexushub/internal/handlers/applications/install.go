@@ -15,8 +15,7 @@ import (
 	"github.com/tomyedwab/yesterday/nexushub/packages"
 )
 
-func HandleInstall(w http.ResponseWriter, r *http.Request) {
-	packageManager := packages.NewPackageManager()
+func HandleInstall(w http.ResponseWriter, r *http.Request, packageManager *packages.PackageManager) {
 	packageName := uuid.New().String()
 
 	// Create a new file with the generated filename
@@ -36,6 +35,9 @@ func HandleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hash := ""
+	foundContent := false
+
 	for {
 		part, err := formData.NextPart()
 		if err == io.EOF {
@@ -46,12 +48,27 @@ func HandleInstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		_, err = io.Copy(file, part)
-		if err != nil {
-			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to write to file: %v", err), http.StatusInternalServerError)
-			return
+		if part.FormName() == "content" {
+			_, err = io.Copy(file, part)
+			if err != nil {
+				httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to write to file: %v", err), http.StatusInternalServerError)
+				return
+			}
+			foundContent = true
+		} else if part.FormName() == "hash" {
+			data, err := io.ReadAll(part)
+			if err == nil {
+				hash = string(data)
+			}
 		}
 	}
+
+	if !foundContent || hash == "" {
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("missing content or hash"), http.StatusBadRequest)
+		return
+	}
+
+	// TODO(tom) STOPSHIP: Validate the hash?
 
 	// Create a 6-byte sequence from the current timestamp and two random bytes
 	// Then base64-encode the sequence to derive a new instance ID
@@ -60,7 +77,7 @@ func HandleInstall(w http.ResponseWriter, r *http.Request) {
 	rand.Read(seq[4:])
 	instanceID := base64.StdEncoding.EncodeToString(seq)
 
-	err = packageManager.InstallPackage(packageName, instanceID)
+	err = packageManager.InstallPackage(packageName, hash, instanceID)
 	if err != nil {
 		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to install package: %v", err), http.StatusInternalServerError)
 		return

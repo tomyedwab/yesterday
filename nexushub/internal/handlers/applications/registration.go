@@ -6,9 +6,10 @@ import (
 	"net/http"
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
+	"github.com/tomyedwab/yesterday/nexushub/packages"
 )
 
-func HandleRegistration(w http.ResponseWriter, r *http.Request) {
+func HandleRegistration(w http.ResponseWriter, r *http.Request, packageManager *packages.PackageManager) {
 	var registrationData map[string]string
 	err := json.NewDecoder(r.Body).Decode(&registrationData)
 	if err != nil {
@@ -17,8 +18,17 @@ func HandleRegistration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := make(map[string]*string)
-	for appName, _ := range registrationData {
-		response[appName] = nil
+	for appName, hash := range registrationData {
+		pkg, err := packageManager.GetPackageByHash(hash)
+		if err != nil {
+			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to look up package info: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if pkg != nil {
+			response[appName] = &pkg.InstanceID
+		} else {
+			response[appName] = nil
+		}
 	}
 
 	httputils.HandleAPIResponse(w, r, response, nil, http.StatusOK)

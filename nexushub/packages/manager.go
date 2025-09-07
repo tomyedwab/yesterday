@@ -5,28 +5,41 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
 type PackageManager struct {
+	DB         *sqlx.DB
 	pkgDir     string
 	installDir string
 }
 
-func NewPackageManager() *PackageManager {
+func NewPackageManager() (*PackageManager, error) {
 	pkgDir := os.Getenv("PKG_DIR")
 	if pkgDir == "" {
 		pkgDir = "/usr/local/etc/nexushub/packages"
 	}
+
 	installDir := os.Getenv("INSTALL_DIR")
 	if installDir == "" {
 		installDir = "/usr/local/etc/nexushub/install"
 	}
+
+	db := sqlx.MustConnect("sqlite3", path.Join(installDir, "packages.db"))
+	err := PackageDBInit(db)
+	if err != nil {
+		return nil, err
+	}
+
 	return &PackageManager{
+		DB:         db,
 		pkgDir:     pkgDir,
 		installDir: installDir,
-	}
+	}, nil
 }
 
 func (pm *PackageManager) GetPkgDir() string {
@@ -111,7 +124,11 @@ func (pm *PackageManager) IsInstalled(instanceID string) bool {
 	return true
 }
 
-func (pm *PackageManager) InstallPackage(name, instanceID string) error {
+func (pm *PackageManager) GetPackageByHash(hash string) (*Package, error) {
+	return PackageDBGetByHash(pm.DB, hash)
+}
+
+func (pm *PackageManager) InstallPackage(name, hash, instanceID string) error {
 	libkrunPath := filepath.Join(pm.pkgDir, "github_com__tomyedwab__yesterday__libkrun.zip")
 	err := Unzip(libkrunPath, filepath.Join(pm.installDir, instanceID))
 	if err != nil {
@@ -129,5 +146,6 @@ func (pm *PackageManager) InstallPackage(name, instanceID string) error {
 		return err
 	}
 
-	return nil
+	err = PackageDBInsert(pm.DB, instanceID, hash, "<TODO>", "<TODO>", []string{})
+	return err
 }

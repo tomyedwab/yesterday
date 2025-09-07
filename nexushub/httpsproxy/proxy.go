@@ -25,6 +25,7 @@ import (
 	app_handlers "github.com/tomyedwab/yesterday/nexushub/internal/handlers/applications"
 	event_handlers "github.com/tomyedwab/yesterday/nexushub/internal/handlers/events"
 	"github.com/tomyedwab/yesterday/nexushub/internal/handlers/login"
+	"github.com/tomyedwab/yesterday/nexushub/packages"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
@@ -38,6 +39,7 @@ type Proxy struct {
 	certFile       string
 	keyFile        string
 	pm             httpsproxy_types.ProcessManagerInterface
+	packageManager *packages.PackageManager
 	server         *http.Server
 	transport      *http.Transport
 	internalSecret string
@@ -55,6 +57,7 @@ func NewProxy(
 	keyFile,
 	internalSecret string,
 	pm httpsproxy_types.ProcessManagerInterface,
+	packageManager *packages.PackageManager,
 	instanceProvider httpsproxy_types.AppInstanceProvider,
 	eventManager *events.EventManager,
 ) *Proxy {
@@ -78,6 +81,7 @@ func NewProxy(
 		certFile:       certFile,
 		keyFile:        keyFile,
 		pm:             pm,
+		packageManager: packageManager,
 		transport:      transport,
 		internalSecret: internalSecret,
 		debugHandler:   debugHandler,
@@ -217,14 +221,14 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Application registration endpoints
 	if r.URL.Path == "/apps/register" {
 		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
-			app_handlers.HandleRegistration(w, r)
+			app_handlers.HandleRegistration(w, r, p.packageManager)
 		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
 	if r.URL.Path == "/apps/install" {
 		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
-			app_handlers.HandleInstall(w, r)
+			app_handlers.HandleInstall(w, r, p.packageManager)
 		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return

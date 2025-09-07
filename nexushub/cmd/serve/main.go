@@ -39,16 +39,21 @@ func main() {
 
 	logger.Info("Starting NexusHub Process Manager")
 
-	packageManager := packages.NewPackageManager()
+	packageManager, err := packages.NewPackageManager()
+	if err != nil {
+		logger.Error("Failed to initialize package manager", "error", err)
+		os.Exit(1)
+	}
+	installDir := packageManager.GetInstallDir()
+
 	if !packageManager.IsInstalled("MBtskI6D") {
 		logger.Warn("Admin app not installed, installing...")
-		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__admin", "MBtskI6D"); err != nil {
+		// TODO(tom): Implement the package hash?
+		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__admin", "", "MBtskI6D"); err != nil {
 			logger.Error("Failed to install admin app", "error", err)
 			os.Exit(1)
 		}
 	}
-
-	installDir := packageManager.GetInstallDir()
 
 	sessionsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
 	sessionManager, err := sessions.NewManager(sessionsDatabase, 10*time.Minute, 1*time.Hour)
@@ -182,7 +187,16 @@ func main() {
 	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
-	httpProxy = httpsproxy.NewProxy(proxyListenAddr, hostName, proxyCertFile, proxyKeyFile, internalSecret, processManager, appProvider, eventManager)
+	httpProxy = httpsproxy.NewProxy(
+		proxyListenAddr,
+		hostName,
+		proxyCertFile,
+		proxyKeyFile,
+		internalSecret,
+		processManager,
+		packageManager,
+		appProvider,
+		eventManager)
 
 	contextFn := func(_ net.Listener) context.Context {
 		return context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)

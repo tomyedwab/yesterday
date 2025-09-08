@@ -85,12 +85,12 @@ type DebugHandler struct {
 	cleanupCancels   map[string]context.CancelFunc // Cleanup timer cancellation functions
 	uploadDir        string                        // Directory for storing uploaded packages
 	internalSecret   string
-	logStreamer      *LogStreamer                  // Log streaming manager
-	mu               sync.RWMutex                  // Protects debugApps, uploadSessions, and cleanupCancels
+	logStreamer      *LogStreamer // Log streaming manager
+	mu               sync.RWMutex // Protects debugApps, uploadSessions, and cleanupCancels
 }
 
 // NewDebugHandler creates a new debug handler instance
-func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, instanceProvider httpsproxy_types.AppInstanceProvider, logger *slog.Logger, internalSecret string) *DebugHandler {
+func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, logger *slog.Logger, internalSecret string) *DebugHandler {
 	// Create upload directory
 	uploadDir := filepath.Join(os.TempDir(), "nexushub-debug-uploads")
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
@@ -99,14 +99,13 @@ func NewDebugHandler(processManager httpsproxy_types.ProcessManagerInterface, in
 	}
 
 	return &DebugHandler{
-		processManager:   processManager,
-		instanceProvider: instanceProvider,
-		logger:           logger,
-		debugApps:        make(map[string]*DebugApplication),
-		uploadSessions:   make(map[string]*UploadSession),
-		cleanupCancels:   make(map[string]context.CancelFunc),
-		uploadDir:        uploadDir,
-		internalSecret:   internalSecret,
+		processManager: processManager,
+		logger:         logger,
+		debugApps:      make(map[string]*DebugApplication),
+		uploadSessions: make(map[string]*UploadSession),
+		cleanupCancels: make(map[string]context.CancelFunc),
+		uploadDir:      uploadDir,
+		internalSecret: internalSecret,
 	}
 }
 
@@ -270,12 +269,6 @@ func (h *DebugHandler) HandleCreateApplication(w http.ResponseWriter, r *http.Re
 		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
 	}
 
-	// Store in memory (in production, this would be stored in a database)
-	h.mu.Lock()
-	h.debugApps[appID] = debugApp
-	h.instanceProvider.RemoveDebugInstance(appID)
-	h.mu.Unlock()
-
 	h.logger.Info("Debug application created",
 		"id", appID,
 		"appId", req.AppID,
@@ -331,7 +324,6 @@ func (h *DebugHandler) HandleDeleteApplication(w http.ResponseWriter, r *http.Re
 	// Remove from storage
 	delete(h.debugApps, appID)
 	delete(h.uploadSessions, appID)
-	h.instanceProvider.RemoveDebugInstance(appID)
 
 	h.logger.Info("Debug application deleted", "id", appID, "appId", debugApp.AppID)
 
@@ -360,7 +352,6 @@ func (h *DebugHandler) cleanupExistingApplication(appID string) error {
 			// Remove from storage
 			delete(h.debugApps, id)
 			delete(h.uploadSessions, id)
-			h.instanceProvider.RemoveDebugInstance(id)
 		}
 	}
 	return nil

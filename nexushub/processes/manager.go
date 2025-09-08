@@ -30,7 +30,7 @@ const (
 // AppInstanceProvider defines an interface to get the current list of desired app instances.
 // This allows the source of desired state to be flexible (e.g., in-memory, config file, API).
 type AppInstanceProvider interface {
-	GetAppInstances(ctx context.Context) ([]AppInstance, error)
+	GetAppInstances() ([]AppInstance, error)
 }
 
 // LogCallback is a function type for handling new log entries
@@ -87,7 +87,7 @@ type ProcessManager struct {
 
 // Config holds configuration options for the ProcessManager.
 type Config struct {
-	AppProvider            AppInstanceProvider
+	InstanceProvider       AppInstanceProvider
 	PortManager            *PortManager
 	HealthChecker          HealthChecker // Optional, defaults to HTTPHealthChecker
 	Logger                 *slog.Logger  // Optional, defaults to slog.Default()
@@ -112,8 +112,8 @@ type Config struct {
 
 // NewProcessManager creates a new ProcessManager instance.
 func NewProcessManager(config Config, internalSecret string) (*ProcessManager, error) {
-	if config.AppProvider == nil {
-		return nil, fmt.Errorf("AppInstanceProvider is required")
+	if config.InstanceProvider == nil {
+		return nil, fmt.Errorf("InstanceProvider is required")
 	}
 	if config.PortManager == nil {
 		return nil, fmt.Errorf("PortManager is required")
@@ -164,7 +164,7 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 	}
 
 	pm := &ProcessManager{
-		desiredStateProvider:     config.AppProvider,
+		desiredStateProvider:     config.InstanceProvider,
 		actualState:              make(map[string]*ManagedProcess),
 		portManager:              config.PortManager,
 		healthChecker:            healthChecker,
@@ -536,7 +536,7 @@ func (pm *ProcessManager) checkAndFireFirstReconcileCallback() {
 	}
 
 	// Check if all processes are running and healthy
-	desiredInstances, err := pm.desiredStateProvider.GetAppInstances(context.Background())
+	desiredInstances, err := pm.desiredStateProvider.GetAppInstances()
 	if err != nil {
 		// Can't determine desired state, so we can't say reconciliation is complete
 		return
@@ -576,7 +576,7 @@ func (pm *ProcessManager) checkAndFireFirstReconcileCallback() {
 
 func (pm *ProcessManager) reconcileState(ctx context.Context) error {
 	pm.logger.Debug("Starting reconciliation cycle.")
-	desiredInstances, err := pm.desiredStateProvider.GetAppInstances(ctx)
+	desiredInstances, err := pm.desiredStateProvider.GetAppInstances()
 	if err != nil {
 		return fmt.Errorf("failed to get desired app instances: %w", err)
 	}
@@ -850,16 +850,21 @@ func (pm *ProcessManager) stopProcess(ctx context.Context, process *ManagedProce
 		}
 	case <-gracefulShutdownTimer.C:
 		pm.logger.Warn("Process did not exit gracefully, sending SIGKILL", "instanceID", process.Instance.InstanceID, "pid", process.PID)
-		if err := process.Cmd.Process.Kill(); err != nil {
-			pm.logger.Error("Failed to send SIGKILL to process", "instanceID", process.Instance.InstanceID, "pid", process.PID, "error", err)
-			// At this point, the process might be orphaned or in an unrecoverable state
-			process.UpdateState(StateFailed) // Or a new state like StateOrphaned
-			// Not removing from actual state here as it might need manual intervention or further checks
-			return fmt.Errorf("failed to kill process %s (PID %d): %w", process.Instance.InstanceID, process.PID, err)
+		// Check if process is still valid before attempting to kill
+		if process.Cmd != nil && process.Cmd.Process != nil {
+			if err := process.Cmd.Process.Kill(); err != nil {
+				pm.logger.Error("Failed to send SIGKILL to process", "instanceID", process.Instance.InstanceID, "pid", process.PID, "error", err)
+				// At this point, the process might be orphaned or in an unrecoverable state
+				process.UpdateState(StateFailed) // Or a new state like StateOrphaned
+				// Not removing from actual state here as it might need manual intervention or further checks
+				return fmt.Errorf("failed to kill process %s (PID %d): %w", process.Instance.InstanceID, process.PID, err)
+			} else {
+				pm.logger.Info("Process killed with SIGKILL", "instanceID", process.Instance.InstanceID, "pid", process.PID)
+				// Wait for a short period to allow OS to clean up, then check Wait() again if needed
+				<-processExitChan // Should now receive the exit error from Kill
+			}
 		} else {
-			pm.logger.Info("Process killed with SIGKILL", "instanceID", process.Instance.InstanceID, "pid", process.PID)
-			// Wait for a short period to allow OS to clean up, then check Wait() again if needed
-			<-processExitChan // Should now receive the exit error from Kill
+			pm.logger.Info("Process already cleaned up, no need to send SIGKILL", "instanceID", process.Instance.InstanceID, "pid", process.PID)
 		}
 	case <-ctx.Done():
 		pm.logger.Warn("Stop process context cancelled", "instanceID", process.Instance.InstanceID, "pid", process.PID)
@@ -912,7 +917,7 @@ func (pm *ProcessManager) handleProcessExit(ctx context.Context, process *Manage
 	}
 
 	// Check if this process is still in the desired state. If not, don't restart.
-	desiredInstances, err := pm.desiredStateProvider.GetAppInstances(ctx)
+	desiredInstances, err := pm.desiredStateProvider.GetAppInstances()
 	if err != nil {
 		pm.logger.Error("Failed to get desired instances during process exit handling", "instanceID", process.Instance.InstanceID, "error", err)
 		// Decide on behavior: maybe retry getting desired state or don't restart for safety
@@ -1065,7 +1070,7 @@ func NewSimpleAppInstanceProvider(initialInstances []AppInstance) *SimpleAppInst
 }
 
 // GetAppInstances returns the list of app instances.
-func (p *SimpleAppInstanceProvider) GetAppInstances(ctx context.Context) ([]AppInstance, error) {
+func (p *SimpleAppInstanceProvider) GetAppInstances() ([]AppInstance, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	// Return a copy to prevent modification of the internal slice by the caller

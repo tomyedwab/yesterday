@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -69,20 +68,22 @@ func main() {
 	}
 
 	// 2. Create AdminInstanceProvider with static instances for critical services
-	staticApps := []processes.StaticAppConfig{
-		{
-			InstanceID: "MBtskI6D",
-			HostName:   hostName,
-			PkgPath:    filepath.Join(installDir, "MBtskI6D"),
-			Subscriptions: map[string]bool{
-				"User:Add":            true,
-				"User:UpdatePassword": true,
-				"User:Delete":         true,
-				"User:Update":         true,
+	/*
+		staticApps := []processes.StaticAppConfig{
+			{
+				InstanceID: "MBtskI6D",
+				HostName:   hostName,
+				PkgPath:    filepath.Join(installDir, "MBtskI6D"),
+				Subscriptions: map[string]bool{
+					"User:Add":            true,
+					"User:UpdatePassword": true,
+					"User:Delete":         true,
+					"User:Update":         true,
+				},
 			},
-		},
-	}
-	appProvider := processes.NewAdminInstanceProvider("MBtskI6D", internalSecret, installDir, staticApps)
+			}
+		appProvider := processes.NewAdminInstanceProvider("MBtskI6D", internalSecret, installDir, staticApps)
+	*/
 
 	// 3. Initialize PortManager
 	portManager, err := processes.NewPortManager(10000, 19999)
@@ -101,7 +102,7 @@ func main() {
 	logger.Info("Project root", "path", projectRoot)
 
 	pmConfig := processes.Config{
-		AppProvider:            appProvider,
+		InstanceProvider:       packageManager,
 		PortManager:            portManager,
 		Logger:                 logger,
 		HealthCheckInterval:    10 * time.Second, // Check health more frequently for demo
@@ -124,16 +125,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	processManager.SetFirstReconcileCompleteCallback(func() {
-		// Start the admin instance provider only once we've successfully
-		// started the static applications, including the admin application
-		// itself
-		if err := appProvider.Start(ctx); err != nil {
-			logger.Error("Failed to start AdminInstanceProvider", "error", err)
-			os.Exit(1)
-		}
-	})
-
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -151,12 +142,6 @@ func main() {
 			}
 		} else {
 			logger.Info("HTTPS Proxy was not initialized, skipping stop.")
-		}
-
-		// Stop admin instance provider
-		if appProvider != nil {
-			logger.Info("Stopping AdminInstanceProvider...")
-			appProvider.Stop()
 		}
 
 		// Initiate process manager shutdown
@@ -195,7 +180,6 @@ func main() {
 		internalSecret,
 		processManager,
 		packageManager,
-		appProvider,
 		eventManager)
 
 	contextFn := func(_ net.Listener) context.Context {
@@ -205,7 +189,7 @@ func main() {
 	// 7. Start the HTTPS Proxy server in a goroutine
 	go func() {
 		logger.Info("Starting HTTPS Proxy server...", "address", proxyListenAddr)
-		if err := httpProxy.Start(contextFn, appProvider); err != nil && err != http.ErrServerClosed {
+		if err := httpProxy.Start(contextFn); err != nil && err != http.ErrServerClosed {
 			logger.Error("HTTPS Proxy server failed to start or unexpectedly stopped", "error", err)
 			// Consider a more robust way to signal main application failure if proxy is critical
 			// For example, by closing a channel that main select{}s on, or calling sigChan <- syscall.SIGTERM

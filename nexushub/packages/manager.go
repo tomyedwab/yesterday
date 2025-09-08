@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/tomyedwab/yesterday/nexushub/processes"
 )
 
 type PackageManager struct {
@@ -115,6 +116,13 @@ func Unzip(src, dest string) error {
 }
 
 func (pm *PackageManager) IsInstalled(instanceID string) bool {
+	pkg, err := PackageDBGetByInstanceID(pm.DB, instanceID)
+	if err != nil {
+		return false
+	}
+	if pkg == nil {
+		return false
+	}
 	if pm.installDir == "" {
 		return false
 	}
@@ -124,8 +132,16 @@ func (pm *PackageManager) IsInstalled(instanceID string) bool {
 	return true
 }
 
+func (pm *PackageManager) GetPackageByInstanceID(id string) (*Package, error) {
+	return PackageDBGetByInstanceID(pm.DB, id)
+}
+
 func (pm *PackageManager) GetPackageByHash(hash string) (*Package, error) {
 	return PackageDBGetByHash(pm.DB, hash)
+}
+
+func (pm *PackageManager) GetActivePackages() ([]*Package, error) {
+	return PackageDBGetActive(pm.DB)
 }
 
 func (pm *PackageManager) InstallPackage(name, hash, instanceID string) error {
@@ -146,6 +162,28 @@ func (pm *PackageManager) InstallPackage(name, hash, instanceID string) error {
 		return err
 	}
 
-	err = PackageDBInsert(pm.DB, instanceID, hash, "<TODO>", "<TODO>", []string{})
+	// TODO(tom) STOPSHIP Load metadata from manifest file
+	err = PackageDBInsert(pm.DB, instanceID, hash, "<TODO>", "<TODO>", map[string]bool{})
 	return err
+}
+
+func (pm *PackageManager) SetPackageActive(instanceID string) error {
+	return PackageDBUpdateTTL(pm.DB, instanceID)
+}
+
+func (pm *PackageManager) GetAppInstances() ([]processes.AppInstance, error) {
+	packages, err := PackageDBGetActive(pm.DB)
+	if err != nil {
+		return nil, err
+	}
+	ret := make([]processes.AppInstance, len(packages))
+	for i, pkg := range packages {
+		ret[i] = processes.AppInstance{
+			InstanceID:    pkg.InstanceID,
+			HostName:      "",
+			PkgPath:       filepath.Join(pm.installDir, pkg.InstanceID),
+			Subscriptions: pkg.Subscriptions,
+		}
+	}
+	return ret, nil
 }

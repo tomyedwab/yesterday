@@ -58,7 +58,6 @@ func NewProxy(
 	internalSecret string,
 	pm httpsproxy_types.ProcessManagerInterface,
 	packageManager *packages.PackageManager,
-	instanceProvider httpsproxy_types.AppInstanceProvider,
 	eventManager *events.EventManager,
 ) *Proxy {
 	dialer := net.Dialer{
@@ -73,7 +72,7 @@ func NewProxy(
 
 	// Create logger for debug handler
 	logger := slog.Default()
-	debugHandler := handlers.NewDebugHandler(pm, instanceProvider, logger, internalSecret)
+	debugHandler := handlers.NewDebugHandler(pm, logger, internalSecret)
 
 	return &Proxy{
 		listenAddr:     listenAddr,
@@ -89,7 +88,7 @@ func NewProxy(
 	}
 }
 
-func (p *Proxy) Start(contextFn func(net.Listener) context.Context, instanceProvider httpsproxy_types.AppInstanceProvider) error {
+func (p *Proxy) Start(contextFn func(net.Listener) context.Context) error {
 	// Load TLS certificates
 	cert, err := tls.LoadX509KeyPair(p.certFile, p.keyFile)
 	if err != nil {
@@ -169,31 +168,34 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Login endpoints
 
-	adminHost, err := p.GetServiceHost("MBtskI6D")
-	if err != nil {
-		http.Error(w, "Service not found for admin", http.StatusNotFound)
-		log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
-		return
-	}
-
-	if r.URL.Path == "/public/login" {
-		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
-			login.HandleLogin(w, r, adminHost)
-		})
-		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
-		return
-	}
 	if r.URL.Path == "/public/logout" {
 		middleware.CorsMiddleware(w, r, login.HandleLogout)
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
 	}
-	if r.URL.Path == "/public/access_token" {
-		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
-			login.HandleAccessToken(w, r, adminHost)
-		})
-		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
-		return
+	if r.URL.Path == "/public/login" || r.URL.Path == "/public/access_token" {
+		_, port, err := p.GetAppInstanceByID("MBtskI6D")
+		if err != nil {
+			http.Error(w, "Service not found for admin", http.StatusNotFound)
+			log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
+			return
+		}
+		adminHost := fmt.Sprintf("http://localhost:%d", port)
+
+		if r.URL.Path == "/public/login" {
+			middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+				login.HandleLogin(w, r, adminHost)
+			})
+			log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
+			return
+		}
+		if r.URL.Path == "/public/access_token" {
+			middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
+				login.HandleAccessToken(w, r, adminHost)
+			})
+			log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
+			return
+		}
 	}
 
 	// Validate authorization for API endpoints
@@ -251,84 +253,35 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Look for an application ID in the path string
-	var instance *processes.AppInstance
-	var port int
-	var targetPath string
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) > 1 {
-		appID := parts[1]
-		if appID != "" {
-			instance, port, err = p.pm.GetAppInstanceByID(appID)
+		instanceID := parts[1]
+		if instanceID == "" {
+			_, port, err := p.GetAppInstanceByID(instanceID)
 			if err != nil {
-				http.Error(w, "Service not found for app ID "+appID, http.StatusNotFound)
-				log.Printf("<%s> %s %s 404 [Service not found]", traceID, r.Host, r.URL.Path)
+				http.Error(w, "Application instance not found for instance ID "+instanceID, http.StatusNotFound)
+				log.Printf("<%s> %s %s 404 [Application instance not found]", traceID, r.Host, r.URL.Path)
 				return
 			}
-			if instance == nil {
-				http.Error(w, "Service unavailable for app ID "+appID, http.StatusServiceUnavailable)
-				log.Printf("<%s> %s %s 404 [No active instances]", traceID, r.Host, r.URL.Path)
-				return
-			}
-			targetPath = r.URL.Path[len("/"+appID+"/"):]
-		}
-	}
 
-	if instance != nil {
-		// Token is valid, proxy the request
-		targetURL := &url.URL{
-			Scheme: "http", // Backend services are HTTP
-			Host:   "localhost:" + strconv.Itoa(port),
-		}
-
-		origPath := r.URL.Path
-		reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-		reverseProxy.Transport = p.transport
-		r.Host = targetURL.Host
-		r.URL.Path = targetPath
-		r.Header.Add("X-Trace-ID", traceID)
-
-		log.Printf("<%s> %s %s => %s", traceID, r.Host, origPath, targetURL.String())
-		reverseProxy.ServeHTTP(w, r)
-		return
-	}
-
-	/*
-		appID := r.Header.Get("X-Application-Id")
-
-		if appID != "" {
-			resolutionIdentifier = "app:" + appID
-			instance, port, err = p.pm.GetAppInstanceByID(appID)
-			if err != nil {
-				http.Error(w, "Service not found for "+resolutionIdentifier, http.StatusNotFound)
-				log.Printf("<%s> %s%s 404 [Service not found]", traceID, resolutionIdentifier, r.URL.Path)
-				return
+			// Token is valid, proxy the request
+			targetURL := &url.URL{
+				Scheme: "http", // Backend services are HTTP
+				Host:   "localhost:" + strconv.Itoa(port),
 			}
-			if instance == nil {
-				http.Error(w, "Service unavailable for "+resolutionIdentifier, http.StatusServiceUnavailable)
-				log.Printf("<%s> %s%s 404 [No active instances]", traceID, resolutionIdentifier, r.URL.Path)
-				return
-			}
-		} else if strings.HasSuffix(originalHostForLog, "."+p.host) {
-			// Fallback to hostname-based routing
-			hostname := strings.TrimSuffix(originalHostForLog, "."+p.host)
-			resolutionIdentifier = "host:" + hostname
-			instance, port, err = p.pm.GetAppInstanceByHostName(hostname)
-			if err != nil {
-				http.Error(w, "Service not found for "+resolutionIdentifier, http.StatusNotFound)
-				log.Printf("<%s> %s%s 404 [Service not found]", traceID, resolutionIdentifier, r.URL.Path)
-				return
-			}
-			if instance == nil {
-				http.Error(w, "Service unavailable for "+resolutionIdentifier, http.StatusServiceUnavailable)
-				log.Printf("<%s> %s%s 404 [No active instances]", traceID, resolutionIdentifier, r.URL.Path)
-				return
-			}
-		} else {
-			http.Error(w, "Request for invalid host name "+originalHostForLog, http.StatusServiceUnavailable)
-			log.Printf("<%s> %s%s 404 [Invalid host name]", traceID, originalHostForLog, r.URL.Path)
+
+			origPath := r.URL.Path
+			reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
+			reverseProxy.Transport = p.transport
+			r.Host = targetURL.Host
+			r.URL.Path = r.URL.Path[len("/"+instanceID+"/"):]
+			r.Header.Add("X-Trace-ID", traceID)
+
+			log.Printf("<%s> %s %s => %s", traceID, r.Host, origPath, targetURL.String())
+			reverseProxy.ServeHTTP(w, r)
 			return
 		}
-	*/
+	}
 
 	// TODO(tom) STOPSHIP remove this once we consolidate domains
 	/*
@@ -354,54 +307,48 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	*/
 
-	/*
-		if strings.HasPrefix(r.URL.Path, "/public/") {
-			// Token is valid, proxy the request
-			targetURL := &url.URL{
-				Scheme: "http", // Backend services are HTTP
-				Host:   "localhost:" + strconv.Itoa(port),
-			}
-
-			reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-			reverseProxy.Transport = p.transport
-			r.Host = targetURL.Host
-			r.Header.Add("X-Trace-ID", traceID)
-
-			log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
-			reverseProxy.ServeHTTP(w, r)
-			return
-		}
-
-		// Handle /api/ paths with authorization
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-		}
-
-		// Handle /internal/ paths
-		if strings.HasPrefix(r.URL.Path, "/internal/") {
-			if r.Header.Get("Authorization") != "Bearer "+p.internalSecret {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
-				log.Printf("<%s> %s%s => 401 [Invalid token]", traceID, resolutionIdentifier, r.URL.Path)
-				return
-			}
-			targetURL := &url.URL{
-				Scheme: "http", // Backend services are HTTP
-				Host:   "localhost:" + strconv.Itoa(port),
-			}
-
-			reverseProxy := httputil.NewSingleHostReverseProxy(targetURL)
-			reverseProxy.Transport = p.transport
-			r.Host = targetURL.Host
-			r.Header.Add("X-Trace-ID", traceID)
-
-			log.Printf("<%s> %s%s => %s", traceID, resolutionIdentifier, r.URL.Path, targetURL.String())
-			reverseProxy.ServeHTTP(w, r)
-			return
-		}
-	*/
-
 	// No matching route found
 	http.Error(w, "Not Found", http.StatusNotFound)
 	log.Printf("<%s> %s %s 404 [No route found]", traceID, r.Host, r.URL.Path)
+}
+
+func (p *Proxy) GetAppInstanceByID(instanceID string) (*processes.AppInstance, int, error) {
+	pkg, err := p.packageManager.GetPackageByInstanceID(instanceID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("application instance not found for app ID %s: %v", instanceID, err)
+	}
+	if pkg == nil {
+		return nil, 0, fmt.Errorf("application instance not found for app ID %s", instanceID)
+	}
+
+	// Make sure the package is active. This will start the process if
+	// it isn't currently running, and keep it around for at least the
+	// next few minutes.
+	err = p.packageManager.SetPackageActive(pkg.InstanceID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to activate app ID %s: %v", instanceID, err)
+	}
+
+	// The instance might not be running immediately, so wait a little while for
+	// it to start, up to 30 seconds.
+	// TODO: Move to a configurable setting
+	backoffInterval := time.Millisecond * 250
+	backoffMaxTime := time.Second * 30
+	startTime := time.Now()
+
+	for {
+		instance, port, err := p.pm.GetAppInstanceByID(instanceID)
+		if err == nil && instance != nil {
+			return instance, port, nil
+		}
+
+		if time.Since(startTime) > backoffMaxTime {
+			return nil, 0, fmt.Errorf("instance not serving for app ID %s: %v", instanceID, err)
+		}
+
+		time.Sleep(backoffInterval)
+		backoffInterval *= 2
+	}
 }
 
 func (p *Proxy) GetServiceHost(instanceID string) (string, error) {

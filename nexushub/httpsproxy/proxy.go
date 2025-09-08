@@ -246,7 +246,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/events/poll" {
 		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
-			event_handlers.HandleEventPoll(w, r, p.pm)
+			event_handlers.HandleEventPoll(w, r, p.packageManager, p.pm)
 		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return

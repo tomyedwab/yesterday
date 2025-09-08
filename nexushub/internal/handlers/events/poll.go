@@ -8,9 +8,10 @@ import (
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
+	"github.com/tomyedwab/yesterday/nexushub/packages"
 )
 
-func HandleEventPoll(w http.ResponseWriter, r *http.Request, processManager httpsproxy_types.ProcessManagerInterface) {
+func HandleEventPoll(w http.ResponseWriter, r *http.Request, packageManager *packages.PackageManager, processManager httpsproxy_types.ProcessManagerInterface) {
 	var query map[string]int
 	defer r.Body.Close()
 	err := json.NewDecoder(r.Body).Decode(&query)
@@ -23,6 +24,9 @@ func HandleEventPoll(w http.ResponseWriter, r *http.Request, processManager http
 	haveUpdates := false
 
 	for instanceID, currentEventID := range query {
+		// If someone is polling on events, then we should probably mark the
+		// package active
+		packageManager.SetPackageActive(instanceID)
 		response[instanceID] = processManager.GetEventState(instanceID)
 		if response[instanceID] > currentEventID {
 			haveUpdates = true
@@ -35,7 +39,7 @@ func HandleEventPoll(w http.ResponseWriter, r *http.Request, processManager http
 	}
 
 	// Sleep until poll window is done
-	// TODO(tom) Return early when event IDs change
+	// TODO(tom) STOPSHIP Return early when event IDs change
 	time.Sleep(time.Second * 50)
 
 	httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("Not modified"), http.StatusNotModified)

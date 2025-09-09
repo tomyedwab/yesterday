@@ -42,9 +42,23 @@ func HandleEventPoll(w http.ResponseWriter, r *http.Request, packageManager *pac
 		return
 	}
 
-	// Sleep until poll window is done
-	// TODO(tom) STOPSHIP Return early when event IDs change
-	time.Sleep(time.Second * 50)
+	expiryTimer := time.After(time.Second * 50)
 
-	httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("Not modified"), http.StatusNotModified)
+	cbID, stateUpdated := processManager.AddEventStateCallback()
+	defer processManager.RemoveEventStateCallback(cbID)
+
+	for {
+		select {
+		case cbInfo := <-stateUpdated:
+			// Only return if the event ID actually changed
+			if _, ok := response[cbInfo.InstanceID]; ok && response[cbInfo.InstanceID] != cbInfo.EventID {
+				response[cbInfo.InstanceID] = cbInfo.EventID
+				httputils.HandleAPIResponse(w, r, response, nil, http.StatusOK)
+				return
+			}
+		case <-expiryTimer:
+			httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("Not modified"), http.StatusNotModified)
+			return
+		}
+	}
 }

@@ -18,13 +18,13 @@ import (
 )
 
 const (
-	defaultHealthCheckInterval    = 15 * time.Second
-	defaultHealthCheckTimeout     = 5 * time.Second
-	defaultConsecutiveFailures    = 3
-	defaultRestartBackoffInitial  = 1 * time.Second
-	defaultRestartBackoffMax      = 30 * time.Second
-	defaultGracefulShutdownPeriod = 10 * time.Second
-	serviceHostExecutable         = "dist/bin/servicehost" // As per spec, can be made configurable
+	defaultHealthCheckInterval     = 15 * time.Second
+	defaultHealthCheckIntervalFast = 1 * time.Second // For starting/unhealthy processes
+	defaultHealthCheckTimeout      = 5 * time.Second
+	defaultConsecutiveFailures     = 30
+	defaultRestartBackoffInitial   = 1 * time.Second
+	defaultRestartBackoffMax       = 30 * time.Second
+	defaultGracefulShutdownPeriod  = 10 * time.Second
 )
 
 // AppInstanceProvider defines an interface to get the current list of desired app instances.
@@ -57,18 +57,20 @@ type ProcessManager struct {
 	eventManager  *events.EventManager
 
 	// Configuration
-	healthCheckInterval    time.Duration
-	consecutiveFailures    int           // Number of consecutive health check failures before restart
-	restartBackoffInitial  time.Duration // Initial delay for restart backoff
-	restartBackoffMax      time.Duration // Maximum delay for restart backoff
-	gracefulShutdownPeriod time.Duration // Time to wait for graceful shutdown before SIGKILL
-	internalSecret         string        // Secret for authorizing cross-service requests
+	healthCheckInterval     time.Duration
+	healthCheckIntervalFast time.Duration // Faster interval for starting/unhealthy processes
+	consecutiveFailures     int           // Number of consecutive health check failures before restart
+	restartBackoffInitial   time.Duration // Initial delay for restart backoff
+	restartBackoffMax       time.Duration // Maximum delay for restart backoff
+	gracefulShutdownPeriod  time.Duration // Time to wait for graceful shutdown before SIGKILL
+	internalSecret          string        // Secret for authorizing cross-service requests
 
 	// Control channels
-	stopChan   chan struct{}  // Signals the manager to stop
-	eventChan  chan struct{}  // Signals the manager that new events have been published
-	reloadChan chan struct{}  // Signals the manager to start a reconciliation ASAP
-	wg         sync.WaitGroup // Waits for goroutines to finish
+	stopChan        chan struct{}  // Signals the manager to stop
+	eventChan       chan struct{}  // Signals the manager that new events have been published
+	reloadChan      chan struct{}  // Signals the manager to start a reconciliation ASAP
+	healthCheckChan chan struct{}  // Signals immediate health check needed
+	wg              sync.WaitGroup // Waits for goroutines to finish
 
 	// Working directory for subprocesses
 	subprocessWorkDir string
@@ -88,18 +90,19 @@ type ProcessManager struct {
 
 // Config holds configuration options for the ProcessManager.
 type Config struct {
-	InstanceProvider       AppInstanceProvider
-	PortManager            *PortManager
-	HealthChecker          HealthChecker // Optional, defaults to HTTPHealthChecker
-	Logger                 *slog.Logger  // Optional, defaults to slog.Default()
-	EventManager           *events.EventManager
-	HealthCheckInterval    time.Duration // Optional, defaults to 15s
-	HealthCheckTimeout     time.Duration // Optional, for default HTTPHealthChecker, defaults to 5s
-	ConsecutiveFailures    int           // Optional, defaults to 3
-	RestartBackoffInitial  time.Duration // Optional, defaults to 1s
-	RestartBackoffMax      time.Duration // Optional, defaults to 30s
-	GracefulShutdownPeriod time.Duration // Optional, defaults to 10s
-	SubprocessWorkDir      string        // Optional, defaults to current directory
+	InstanceProvider        AppInstanceProvider
+	PortManager             *PortManager
+	HealthChecker           HealthChecker // Optional, defaults to HTTPHealthChecker
+	Logger                  *slog.Logger  // Optional, defaults to slog.Default()
+	EventManager            *events.EventManager
+	HealthCheckInterval     time.Duration // Optional, defaults to 15s
+	HealthCheckIntervalFast time.Duration // Optional, defaults to 5s for starting/unhealthy processes
+	HealthCheckTimeout      time.Duration // Optional, for default HTTPHealthChecker, defaults to 5s
+	ConsecutiveFailures     int           // Optional, defaults to 3
+	RestartBackoffInitial   time.Duration // Optional, defaults to 1s
+	RestartBackoffMax       time.Duration // Optional, defaults to 30s
+	GracefulShutdownPeriod  time.Duration // Optional, defaults to 10s
+	SubprocessWorkDir       string        // Optional, defaults to current directory
 	// OnFirstReconcileComplete is an optional callback function that will be called exactly once
 	// when the first reconciliation process completes successfully with all desired processes
 	// running and healthy. This is useful for:
@@ -138,6 +141,10 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 	if hcInterval == 0 {
 		hcInterval = defaultHealthCheckInterval
 	}
+	hcIntervalFast := config.HealthCheckIntervalFast
+	if hcIntervalFast == 0 {
+		hcIntervalFast = defaultHealthCheckIntervalFast
+	}
 	consFailures := config.ConsecutiveFailures
 	if consFailures == 0 {
 		consFailures = defaultConsecutiveFailures
@@ -172,6 +179,7 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 		logger:                   logger.With("component", "ProcessManager"),
 		eventManager:             config.EventManager,
 		healthCheckInterval:      hcInterval,
+		healthCheckIntervalFast:  hcIntervalFast,
 		consecutiveFailures:      consFailures,
 		restartBackoffInitial:    restartInitial,
 		restartBackoffMax:        restartMax,
@@ -179,6 +187,7 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 		stopChan:                 make(chan struct{}),
 		eventChan:                make(chan struct{}),
 		reloadChan:               make(chan struct{}),
+		healthCheckChan:          make(chan struct{}),
 		subprocessWorkDir:        workDir,
 		internalSecret:           internalSecret,
 		onFirstReconcileComplete: config.OnFirstReconcileComplete,
@@ -500,13 +509,28 @@ func (pm *ProcessManager) Refresh() {
 	}()
 }
 
+// TriggerHealthCheck signals for an immediate health check of all processes.
+func (pm *ProcessManager) TriggerHealthCheck() {
+	pm.logger.Debug("Triggering immediate health check.")
+	select {
+	case pm.healthCheckChan <- struct{}{}:
+		// Signal sent successfully
+	default:
+		// Channel is full, skip (health check is likely already queued)
+		pm.logger.Debug("Health check already queued, skipping trigger.")
+	}
+}
+
 // healthMonitorLoop periodically checks the health of all running subprocesses.
 func (pm *ProcessManager) healthMonitorLoop(ctx context.Context) {
 	defer pm.wg.Done()
 	pm.logger.Info("Health monitor loop started.")
 
-	ticker := time.NewTicker(pm.healthCheckInterval)
-	defer ticker.Stop()
+	normalTicker := time.NewTicker(pm.healthCheckInterval)
+	defer normalTicker.Stop()
+
+	fastTicker := time.NewTicker(pm.healthCheckIntervalFast)
+	defer fastTicker.Stop()
 
 	for {
 		select {
@@ -516,11 +540,16 @@ func (pm *ProcessManager) healthMonitorLoop(ctx context.Context) {
 		case <-pm.eventChan:
 			pm.logger.Info("New event published. Processing pending events.")
 			pm.processPendingEvents(ctx)
+		case <-pm.healthCheckChan:
+			pm.logger.Debug("Immediate health check triggered.")
+			pm.performHealthChecks(ctx)
 		case <-ctx.Done():
 			pm.logger.Info("Health monitor loop context cancelled.")
 			return
-		case <-ticker.C:
-			pm.performHealthChecks(ctx)
+		case <-normalTicker.C:
+			pm.performHealthChecksForStableProcesses(ctx)
+		case <-fastTicker.C:
+			pm.performHealthChecksForUnstableProcesses(ctx)
 		}
 	}
 }
@@ -805,6 +834,9 @@ func (pm *ProcessManager) startProcess(ctx context.Context, instance AppInstance
 
 	pm.logger.Info("Subprocess started successfully and output streams captured", "instanceID", instance.InstanceID, "pid", cmd.Process.Pid, "port", port)
 
+	// Trigger immediate health check for the new process
+	pm.TriggerHealthCheck()
+
 	// Goroutine to wait for the process to exit and handle cleanup
 	pm.wg.Add(1)
 	go func() {
@@ -951,12 +983,66 @@ func (pm *ProcessManager) handleProcessExit(ctx context.Context, process *Manage
 	go pm.startProcess(ctx, desiredInstanceConfig) // Use the latest desired config
 }
 
-// performHealthChecks iterates through running processes and checks their health.
+// performHealthChecks iterates through all processes and checks their health.
 func (pm *ProcessManager) performHealthChecks(ctx context.Context) {
 	pm.mu.RLock() // Read lock to iterate over actualState
 	processesToCheck := make([]*ManagedProcess, 0, len(pm.actualState))
 	for _, process := range pm.actualState {
 		if process.GetState() == StateRunning || process.GetState() == StateUnhealthy || process.GetState() == StateStarting {
+			processesToCheck = append(processesToCheck, process)
+		}
+	}
+	pm.mu.RUnlock()
+
+	for _, process := range processesToCheck {
+		// Check context before each potentially long operation
+		select {
+		case <-ctx.Done():
+			pm.logger.Info("Health check context cancelled, stopping checks.")
+			return
+		case <-pm.stopChan:
+			pm.logger.Info("Manager stopping, stopping health checks.")
+			return
+		default:
+		}
+
+		pm.checkAndUpdateHealth(ctx, process)
+	}
+}
+
+// performHealthChecksForStableProcesses checks health of stable (running) processes.
+func (pm *ProcessManager) performHealthChecksForStableProcesses(ctx context.Context) {
+	pm.mu.RLock() // Read lock to iterate over actualState
+	processesToCheck := make([]*ManagedProcess, 0, len(pm.actualState))
+	for _, process := range pm.actualState {
+		if process.GetState() == StateRunning {
+			processesToCheck = append(processesToCheck, process)
+		}
+	}
+	pm.mu.RUnlock()
+
+	for _, process := range processesToCheck {
+		// Check context before each potentially long operation
+		select {
+		case <-ctx.Done():
+			pm.logger.Info("Health check context cancelled, stopping checks.")
+			return
+		case <-pm.stopChan:
+			pm.logger.Info("Manager stopping, stopping health checks.")
+			return
+		default:
+		}
+
+		pm.checkAndUpdateHealth(ctx, process)
+	}
+}
+
+// performHealthChecksForUnstableProcesses checks health of unstable (starting/unhealthy) processes.
+func (pm *ProcessManager) performHealthChecksForUnstableProcesses(ctx context.Context) {
+	pm.mu.RLock() // Read lock to iterate over actualState
+	processesToCheck := make([]*ManagedProcess, 0, len(pm.actualState))
+	for _, process := range pm.actualState {
+		if process.GetState() == StateUnhealthy || process.GetState() == StateStarting {
 			processesToCheck = append(processesToCheck, process)
 		}
 	}

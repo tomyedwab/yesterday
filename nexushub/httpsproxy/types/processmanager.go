@@ -21,6 +21,9 @@ type ProcessManagerInterface interface {
 	GetLatestProcessLogs(instanceID string, count int) ([]processes.ProcessLogEntry, error)
 	GetProcessLogLatestID(instanceID string) (int64, error)
 	AddLogCallback(callback processes.LogCallback)
+
+	// Trigger a run of the reconciler ASAP
+	Refresh()
 }
 
 // AppInstanceProvider defines the methods the DebugHandler needs

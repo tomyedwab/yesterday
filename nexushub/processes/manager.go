@@ -65,9 +65,10 @@ type ProcessManager struct {
 	internalSecret         string        // Secret for authorizing cross-service requests
 
 	// Control channels
-	stopChan  chan struct{}  // Signals the manager to stop
-	eventChan chan struct{}  // Signals the manager that new events have been published
-	wg        sync.WaitGroup // Waits for goroutines to finish
+	stopChan   chan struct{}  // Signals the manager to stop
+	eventChan  chan struct{}  // Signals the manager that new events have been published
+	reloadChan chan struct{}  // Signals the manager to start a reconciliation ASAP
+	wg         sync.WaitGroup // Waits for goroutines to finish
 
 	// Working directory for subprocesses
 	subprocessWorkDir string
@@ -177,6 +178,7 @@ func NewProcessManager(config Config, internalSecret string) (*ProcessManager, e
 		gracefulShutdownPeriod:   gracefulShutdown,
 		stopChan:                 make(chan struct{}),
 		eventChan:                make(chan struct{}),
+		reloadChan:               make(chan struct{}),
 		subprocessWorkDir:        workDir,
 		internalSecret:           internalSecret,
 		onFirstReconcileComplete: config.OnFirstReconcileComplete,
@@ -468,13 +470,6 @@ func (pm *ProcessManager) reconcilerLoop(ctx context.Context) {
 		// Depending on the error, might need to retry or exit
 	}
 
-	// TODO: The spec mentions "Respond to runtime changes in the declarative application list".
-	// This implies the reconciler should periodically re-fetch desired state or have a mechanism
-	// to be notified of changes. For now, it reconciles once and then relies on health checks
-	// and process exit monitoring to trigger actions.
-	// A simple ticker can be added here to periodically call reconcileState if AppInstanceProvider
-	// can change over time.
-
 	ticker := time.NewTicker(pm.healthCheckInterval) // Re-evaluate desired state at similar frequency to health checks
 	defer ticker.Stop()
 
@@ -486,12 +481,23 @@ func (pm *ProcessManager) reconcilerLoop(ctx context.Context) {
 		case <-ctx.Done():
 			pm.logger.Info("Reconciler loop context cancelled.")
 			return
+		case <-pm.reloadChan:
+			if err := pm.reconcileState(ctx); err != nil {
+				pm.logger.Error("Reconciliation failed", "error", err)
+			}
 		case <-ticker.C:
 			if err := pm.reconcileState(ctx); err != nil {
 				pm.logger.Error("Reconciliation failed", "error", err)
 			}
 		}
 	}
+}
+
+func (pm *ProcessManager) Refresh() {
+	pm.logger.Info("Triggering immediate reconciliation.")
+	go func() {
+		pm.reloadChan <- struct{}{}
+	}()
 }
 
 // healthMonitorLoop periodically checks the health of all running subprocesses.

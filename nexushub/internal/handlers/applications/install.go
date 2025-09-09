@@ -12,10 +12,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tomyedwab/yesterday/applib/httputils"
+	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/packages"
 )
 
-func HandleInstall(w http.ResponseWriter, r *http.Request, packageManager *packages.PackageManager) {
+func HandleInstall(w http.ResponseWriter, r *http.Request, packageManager *packages.PackageManager, processManager httpsproxy_types.ProcessManagerInterface) {
 	packageName := uuid.New().String()
 
 	// Create a new file with the generated filename
@@ -77,7 +78,7 @@ func HandleInstall(w http.ResponseWriter, r *http.Request, packageManager *packa
 	rand.Read(seq[4:])
 	instanceID := base64.StdEncoding.EncodeToString(seq)
 
-	err = packageManager.InstallPackage(packageName, hash, instanceID)
+	err = packageManager.InstallPackage(packageName, hash, instanceID, processManager)
 	if err != nil {
 		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("failed to install package: %v", err), http.StatusInternalServerError)
 		return

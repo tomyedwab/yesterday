@@ -17,11 +17,10 @@ type GenericEventHandler func(tx *sqlx.Tx, eventJson []byte) (bool, error)
 type Database struct {
 	db         *sqlx.DB
 	handlers   map[string][]GenericEventHandler
-	version    string
 	eventState *EventState
 }
 
-func Connect(driverName string, dataSourceName, version string) (*Database, error) {
+func Connect(driverName string, dataSourceName string) (*Database, error) {
 	db, err := sqlx.Connect(driverName, dataSourceName)
 	if err != nil {
 		return nil, err
@@ -29,7 +28,6 @@ func Connect(driverName string, dataSourceName, version string) (*Database, erro
 	return &Database{
 		db:       db,
 		handlers: make(map[string][]GenericEventHandler),
-		version:  version,
 	}, nil
 }
 
@@ -61,7 +59,7 @@ func (db *Database) Initialize() error {
 		return err
 	}
 
-	fmt.Printf("Initialized application version: %s\n", db.version)
+	fmt.Println("Initialized application.")
 
 	return nil
 }

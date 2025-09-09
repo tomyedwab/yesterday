@@ -45,15 +45,6 @@ func main() {
 	}
 	installDir := packageManager.GetInstallDir()
 
-	if !packageManager.IsInstalled("MBtskI6D") {
-		logger.Warn("Admin app not installed, installing...")
-		// TODO(tom): Implement the package hash?
-		if err := packageManager.InstallPackage("github_com__tomyedwab__yesterday__apps__admin", "", "MBtskI6D"); err != nil {
-			logger.Error("Failed to install admin app", "error", err)
-			os.Exit(1)
-		}
-	}
-
 	sessionsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
 	sessionManager, err := sessions.NewManager(sessionsDatabase, 10*time.Minute, 1*time.Hour)
 	if err != nil {
@@ -101,6 +92,20 @@ func main() {
 	if err != nil {
 		logger.Error("Failed to create ProcessManager", "error", err)
 		os.Exit(1)
+	}
+
+	if !packageManager.IsInstalled("MBtskI6D") {
+		logger.Warn("Admin app not installed, installing...")
+		// TODO(tom): Implement the package hash?
+		if err := packageManager.InstallPackage(
+			"github_com__tomyedwab__yesterday__apps__admin",
+			"",
+			"MBtskI6D",
+			processManager,
+		); err != nil {
+			logger.Error("Failed to install admin app", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	// 5. Setup signal handling for graceful shutdown

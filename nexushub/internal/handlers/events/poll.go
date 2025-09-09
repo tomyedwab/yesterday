@@ -26,7 +26,11 @@ func HandleEventPoll(w http.ResponseWriter, r *http.Request, packageManager *pac
 	for instanceID, currentEventID := range query {
 		// If someone is polling on events, then we should probably mark the
 		// package active
-		packageManager.SetPackageActive(instanceID)
+		err = packageManager.SetPackageActive(instanceID, processManager)
+		if err != nil {
+			httputils.HandleAPIResponse(w, r, nil, err, http.StatusInternalServerError)
+			return
+		}
 		response[instanceID] = processManager.GetEventState(instanceID)
 		if response[instanceID] > currentEventID {
 			haveUpdates = true

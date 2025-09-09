@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/jmoiron/sqlx"
+	httpsproxy_types "github.com/tomyedwab/yesterday/nexushub/httpsproxy/types"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
 	"github.com/tomyedwab/yesterday/nexushub/types"
 )
@@ -146,7 +147,7 @@ func (pm *PackageManager) GetActivePackages() ([]*Package, error) {
 	return PackageDBGetActive(pm.DB)
 }
 
-func (pm *PackageManager) InstallPackage(name, hash, instanceID string) error {
+func (pm *PackageManager) InstallPackage(name, hash, instanceID string, processManager httpsproxy_types.ProcessManagerInterface) error {
 	libkrunPath := filepath.Join(pm.pkgDir, "github_com__tomyedwab__yesterday__libkrun.zip")
 	err := Unzip(libkrunPath, filepath.Join(pm.installDir, instanceID))
 	if err != nil {
@@ -182,11 +183,21 @@ func (pm *PackageManager) InstallPackage(name, hash, instanceID string) error {
 	}
 
 	err = PackageDBInsert(pm.DB, instanceID, hash, manifest.Name, manifest.Version, subscriptionsMap)
-	return err
+	if err != nil {
+		return err
+	}
+
+	processManager.Refresh()
+	return nil
 }
 
-func (pm *PackageManager) SetPackageActive(instanceID string) error {
-	return PackageDBUpdateTTL(pm.DB, instanceID)
+func (pm *PackageManager) SetPackageActive(instanceID string, processManager httpsproxy_types.ProcessManagerInterface) error {
+	err := PackageDBUpdateTTL(pm.DB, instanceID)
+	if err != nil {
+		return err
+	}
+	processManager.Refresh()
+	return nil
 }
 
 func (pm *PackageManager) GetAppInstances() ([]processes.AppInstance, error) {

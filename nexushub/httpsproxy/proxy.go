@@ -147,11 +147,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		// Handle install endpoint
-		if strings.HasSuffix(r.URL.Path, "/install-dev") && r.Method == http.MethodPost {
-			p.debugHandler.HandleInstallDevApplication(w, r)
-			return
-		}
 		// Handle status endpoint
 		if strings.HasSuffix(r.URL.Path, "/status") && r.Method == http.MethodGet {
 			p.debugHandler.HandleApplicationStatus(w, r)
@@ -230,7 +225,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/apps/install" {
 		middleware.CorsMiddleware(w, r, func(w http.ResponseWriter, r *http.Request) {
-			app_handlers.HandleInstall(w, r, p.packageManager)
+			app_handlers.HandleInstall(w, r, p.packageManager, p.pm)
 		})
 		log.Printf("<%s> %s %s", traceID, r.Host, r.URL.Path)
 		return
@@ -324,7 +319,7 @@ func (p *Proxy) GetAppInstanceByID(instanceID string) (*processes.AppInstance, i
 	// Make sure the package is active. This will start the process if
 	// it isn't currently running, and keep it around for at least the
 	// next few minutes.
-	err = p.packageManager.SetPackageActive(pkg.InstanceID)
+	err = p.packageManager.SetPackageActive(pkg.InstanceID, p.pm)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to activate app ID %s: %v", instanceID, err)
 	}

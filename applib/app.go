@@ -11,9 +11,8 @@ import (
 )
 
 type Application struct {
-	serverVersion string
-	db            *database.Database
-	contextVars   map[string]any
+	db          *database.Database
+	contextVars map[string]any
 }
 
 var (
@@ -22,11 +21,10 @@ var (
 	ContextSqliteDatabaseKey = "sqlite_database"
 )
 
-func NewApplication(serverVersion string, db *database.Database) *Application {
+func NewApplication(db *database.Database) *Application {
 	return &Application{
-		serverVersion: serverVersion,
-		db:            db,
-		contextVars:   make(map[string]any),
+		db:          db,
+		contextVars: make(map[string]any),
 	}
 }
 

@@ -67,24 +67,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 2. Create AdminInstanceProvider with static instances for critical services
-	/*
-		staticApps := []processes.StaticAppConfig{
-			{
-				InstanceID: "MBtskI6D",
-				HostName:   hostName,
-				PkgPath:    filepath.Join(installDir, "MBtskI6D"),
-				Subscriptions: map[string]bool{
-					"User:Add":            true,
-					"User:UpdatePassword": true,
-					"User:Delete":         true,
-					"User:Update":         true,
-				},
-			},
-			}
-		appProvider := processes.NewAdminInstanceProvider("MBtskI6D", internalSecret, installDir, staticApps)
-	*/
-
 	// 3. Initialize PortManager
 	portManager, err := processes.NewPortManager(10000, 19999)
 	if err != nil {

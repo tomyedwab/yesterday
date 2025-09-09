@@ -11,6 +11,7 @@ build: clean
 	# Build admin app
 	mkdir -p build/admin/bin
 	mkdir -p build/admin/static
+	cp apps/admin/manifest.json build/admin/
 	go build -o build/admin/bin/app apps/admin/main.go
 	(cd apps/admin/web && npm run build && cp -R dist/* ../../../build/admin/static/)
 	(cd build/admin && zip -r ../pkg/github_com__tomyedwab__yesterday__apps__admin.zip .)

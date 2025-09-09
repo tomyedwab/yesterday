@@ -2,6 +2,7 @@ package packages
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/tomyedwab/yesterday/nexushub/processes"
+	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
 type PackageManager struct {
@@ -162,8 +164,24 @@ func (pm *PackageManager) InstallPackage(name, hash, instanceID string) error {
 		return err
 	}
 
-	// TODO(tom) STOPSHIP Load metadata from manifest file
-	err = PackageDBInsert(pm.DB, instanceID, hash, "<TODO>", "<TODO>", map[string]bool{})
+	// Read manifest.json in the newly-installed directory
+	manifestPath := filepath.Join(pm.installDir, instanceID, "app", "manifest.json")
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+	var manifest types.PackageManifest
+	err = json.Unmarshal(manifestBytes, &manifest)
+	if err != nil {
+		return err
+	}
+
+	subscriptionsMap := make(map[string]bool)
+	for _, subscription := range manifest.Subscriptions {
+		subscriptionsMap[subscription] = true
+	}
+
+	err = PackageDBInsert(pm.DB, instanceID, hash, manifest.Name, manifest.Version, subscriptionsMap)
 	return err
 }
 

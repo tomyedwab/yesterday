@@ -1,0 +1,11 @@
+{
+  "name": "User admin",
+  "version": "1.0.0",
+  "description": "Manage user accounts.",
+  "subscriptions": [
+    "User:Add",
+    "User:UpdatePassword",
+    "User:Delete",
+    "User:Update"
+  ]
+}

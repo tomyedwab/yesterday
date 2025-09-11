@@ -76,7 +76,7 @@ func HandleInstall(w http.ResponseWriter, r *http.Request, packageManager *packa
 	seq := make([]byte, 6)
 	binary.BigEndian.PutUint32(seq[:4], uint32(time.Now().Unix()))
 	rand.Read(seq[4:])
-	instanceID := base64.StdEncoding.EncodeToString(seq)
+	instanceID := base64.URLEncoding.EncodeToString(seq)
 
 	err = packageManager.InstallPackage(packageName, hash, instanceID, processManager)
 	if err != nil {

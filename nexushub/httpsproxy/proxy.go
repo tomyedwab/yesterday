@@ -251,7 +251,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(r.URL.Path, "/")
 	if len(parts) > 1 {
 		instanceID := parts[1]
-		if instanceID == "" {
+		if instanceID != "" {
 			_, port, err := p.GetAppInstanceByID(instanceID)
 			if err != nil {
 				http.Error(w, "Application instance not found for instance ID "+instanceID, http.StatusNotFound)
@@ -273,7 +273,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			r.Header.Add("X-Trace-ID", traceID)
 
 			log.Printf("<%s> %s %s => %s", traceID, r.Host, origPath, targetURL.String())
-			reverseProxy.ServeHTTP(w, r)
+			middleware.CorsMiddleware(w, r, reverseProxy.ServeHTTP)
 			return
 		}
 	}

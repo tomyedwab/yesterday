@@ -2,6 +2,7 @@ package processes
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -252,32 +253,77 @@ func (mp *ManagedProcess) ProcessPendingEvents(eventManager *events.EventManager
 		return 0, nil
 	}
 
+	const batchSize = 100 // Process up to 100 events at a time
+
 	log.Printf("Process %s has pending events %d - %d", mp.Instance.InstanceID, mp.currentEventId+1, expectedEventId)
-	for eventId := mp.currentEventId + 1; eventId <= expectedEventId; eventId++ {
+
+	// Collect events to process in batches
+	type eventInfo struct {
+		id        int
+		eventType string
+		data      string
+	}
+	var eventsToProcess []eventInfo
+
+	for eventId := mp.currentEventId + 1; eventId <= expectedEventId && len(eventsToProcess) < batchSize; eventId++ {
 		eventType, eventData, err := eventManager.GetEvent(eventId)
 		if err != nil {
 			return 0, err
 		}
 		if mp.Instance.Subscriptions[eventType] {
-			log.Printf("Sending event %d to service %s", eventId, mp.Instance.InstanceID)
-			// Send the event to the service
-			url := fmt.Sprintf("http://localhost:%d/internal/publish_event?id=%d&type=%s", mp.Port, eventId, eventType)
-			resp, err := http.Post(url, "application/json", io.NopCloser(bytes.NewReader([]byte(eventData))))
-			if err != nil {
-				log.Printf("Failed to send event %d to service %s: %v", eventId, mp.Instance.InstanceID, err)
-				return 0, err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusCreated {
-				contents, _ := io.ReadAll(resp.Body)
-				log.Printf("Failed to send event %d to service %s: %s", eventId, mp.Instance.InstanceID, contents)
-				return 0, fmt.Errorf("failed to make cross-service request. Got status code %d", resp.StatusCode)
-			}
-			// If we get a 200 response, we can assume the event was processed successfully
-			mp.currentEventId = eventId
+			eventsToProcess = append(eventsToProcess, eventInfo{id: eventId, eventType: eventType, data: string(eventData)})
 		}
 	}
-	log.Printf("Done processing events. Now at event %d", mp.currentEventId)
+
+	if len(eventsToProcess) == 0 {
+		return mp.currentEventId, nil
+	}
+
+	// Send batch of events
+	log.Printf("Sending batch of %d events to service %s", len(eventsToProcess), mp.Instance.InstanceID)
+
+	// Create batch payload
+	batchPayload := struct {
+		Events []struct {
+			ID   int    `json:"id"`
+			Type string `json:"type"`
+			Data string `json:"data"`
+		} `json:"events"`
+	}{}
+
+	for _, event := range eventsToProcess {
+		batchPayload.Events = append(batchPayload.Events, struct {
+			ID   int    `json:"id"`
+			Type string `json:"type"`
+			Data string `json:"data"`
+		}{ID: event.id, Type: event.eventType, Data: event.data})
+	}
+
+	// Marshal the batch payload
+	batchJSON, err := json.Marshal(batchPayload)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal batch payload: %v", err)
+	}
+
+	// Send the batch to the service
+	url := fmt.Sprintf("http://localhost:%d/internal/publish_events", mp.Port)
+	resp, err := http.Post(url, "application/json", io.NopCloser(bytes.NewReader(batchJSON)))
+	if err != nil {
+		log.Printf("Failed to send batch of events to service %s: %v", mp.Instance.InstanceID, err)
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		contents, _ := io.ReadAll(resp.Body)
+		log.Printf("Failed to send batch of events to service %s: %s", mp.Instance.InstanceID, contents)
+		return 0, fmt.Errorf("failed to make cross-service request. Got status code %d", resp.StatusCode)
+	}
+
+	// Update current event ID to the last event in the batch
+	mp.currentEventId = eventsToProcess[len(eventsToProcess)-1].id
+
+	log.Printf("Done processing batch of events. Now at event %d", mp.currentEventId)
 	return mp.currentEventId, nil
 }
 

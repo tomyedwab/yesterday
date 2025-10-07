@@ -1,10 +1,9 @@
 package database
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	"github.com/tomyedwab/yesterday/nexushub/types"
@@ -18,38 +17,45 @@ func (db *Database) InitHandlers() error {
 		httputils.HandleAPIResponse(w, r, StatusInfo, nil, http.StatusOK)
 	})
 
-	http.HandleFunc("/internal/publish_event", func(w http.ResponseWriter, r *http.Request) {
-		eventType := r.URL.Query().Get("type")
-		if eventType == "" {
-			http.Error(w, "Missing event type", http.StatusBadRequest)
-			return
+	http.HandleFunc("/internal/publish_events", func(w http.ResponseWriter, r *http.Request) {
+		// Batch event processing
+		var batchRequest struct {
+			Events []struct {
+				ID   int    `json:"id"`
+				Type string `json:"type"`
+				Data string `json:"data"`
+			} `json:"events"`
 		}
-		eventId := r.URL.Query().Get("id")
-		if eventId == "" {
-			http.Error(w, "Missing event ID", http.StatusBadRequest)
-			return
-		}
-		eventIdInt, err := strconv.ParseInt(eventId, 10, 64)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Invalid event ID %s", eventId), http.StatusBadRequest)
-			return
-		}
-		if db.eventState.CurrentEventId >= int(eventIdInt) {
-			http.Error(w, fmt.Sprintf("Event ID %d already published", eventIdInt), http.StatusConflict)
+
+		if err := json.NewDecoder(r.Body).Decode(&batchRequest); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to decode batch request: %v", err), http.StatusBadRequest)
 			return
 		}
 
-		eventData, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to read event data: %v", err), http.StatusInternalServerError)
+		if len(batchRequest.Events) == 0 {
+			http.Error(w, "No events in batch", http.StatusBadRequest)
 			return
 		}
 
-		if err := db.HandleEvent(int(eventIdInt), eventType, eventData); err != nil {
-			http.Error(w, fmt.Sprintf("Failed to publish event ID %d: %v", eventIdInt, err), http.StatusInternalServerError)
-			return
+		// Process events in order
+		lastProcessedId := 0
+		for _, event := range batchRequest.Events {
+			if db.eventState.CurrentEventId >= event.ID {
+				continue // Skip already processed events
+			}
+
+			if err := db.HandleEvent(event.ID, event.Type, []byte(event.Data)); err != nil {
+				http.Error(w, fmt.Sprintf("Failed to publish event ID %d: %v", event.ID, err), http.StatusInternalServerError)
+				return
+			}
+			lastProcessedId = event.ID
 		}
-		http.Error(w, fmt.Sprintf("Published event ID %d", eventIdInt), http.StatusCreated)
+
+		if lastProcessedId > 0 {
+			http.Error(w, fmt.Sprintf("Published batch of events up to ID %d", lastProcessedId), http.StatusCreated)
+		} else {
+			http.Error(w, "All events in batch were already processed", http.StatusOK)
+		}
 	})
 
 	return nil

@@ -56,20 +56,6 @@ type Session struct {
 	LastRefreshed FlexibleInt64 `json:"last_refreshed" db:"last_refreshed"` // Timestamp of the last refresh token issuance
 }
 
-// NewSession creates a new session instance with a unique ID.
-func NewSession(userID int) (*Session, error) {
-	sessionID := uuid.New().String()
-	refreshToken := uuid.New().String()
-	now := FlexibleInt64(time.Now().UTC().Unix())
-	return &Session{
-		ID:            sessionID,
-		UserID:        userID,
-		RefreshToken:  refreshToken,
-		CreatedAt:     now,
-		LastRefreshed: now,
-	}, nil
-}
-
 // generateRandomID generates a cryptographically secure random string encoded in base64.
 func generateRandomID(length int) (string, error) {
 	if length <= 0 {
@@ -83,6 +69,23 @@ func generateRandomID(length int) (string, error) {
 	}
 	// Use URL-safe base64 encoding without padding
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// NewSession creates a new session instance with a unique ID.
+func NewSession(userID int) (*Session, error) {
+	sessionID := uuid.New().String()
+	refreshToken, err := generateRandomID(32)
+	if err != nil {
+		return nil, err
+	}
+	now := FlexibleInt64(time.Now().UTC().Unix())
+	return &Session{
+		ID:            sessionID,
+		UserID:        userID,
+		RefreshToken:  refreshToken,
+		CreatedAt:     now,
+		LastRefreshed: now,
+	}, nil
 }
 
 // --- Database Methods ---

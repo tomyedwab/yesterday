@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type EventPublishData struct {
 	// The client ID for the publish request, used for deduplication
@@ -9,4 +12,6 @@ type EventPublishData struct {
 	Type string `json:"type"`
 	// The event timestamp
 	Timestamp time.Time `json:"timestamp"`
+	// The event payload
+	Data json.RawMessage `json:"data"`
 }

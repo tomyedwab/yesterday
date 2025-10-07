@@ -34,7 +34,7 @@ func HandleEventPublish(w http.ResponseWriter, r *http.Request, eventManager *ev
 		return
 	}
 
-	newEventId, err := eventManager.PublishEvent(publishData.ClientID, publishData.Type, buf)
+	newEventId, err := eventManager.PublishEvent(publishData.ClientID, publishData.Type, publishData.Data)
 	if err != nil {
 		httputils.HandleAPIResponse(w, r, nil, err, http.StatusInternalServerError)
 		return

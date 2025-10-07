@@ -20,23 +20,13 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, adminServiceHost 
 	// Get refresh token from cookie
 	refreshToken, err := r.Cookie("YRT")
 	if err != nil {
-		// There is no refresh token cookie, redirect to login page
-		respJson, _ := json.Marshal(map[string]string{
-			"error": "missing refresh token",
-		})
-		w.WriteHeader(http.StatusOK)
-		w.Write(respJson)
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("missing refresh token"), http.StatusForbidden)
 		return
 	}
 
 	session, err := sessionManager.GetSessionByRefreshToken(refreshToken.Value)
 	if err != nil || session == nil {
-		// Invalid refresh token, redirect to login page
-		respJson, _ := json.Marshal(map[string]string{
-			"error": "refresh token not found",
-		})
-		w.WriteHeader(http.StatusOK)
-		w.Write(respJson)
+		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("refresh token not found"), http.StatusForbidden)
 		return
 	}
 

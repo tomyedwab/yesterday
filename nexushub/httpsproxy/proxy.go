@@ -38,6 +38,7 @@ type Proxy struct {
 	host           string
 	certFile       string
 	keyFile        string
+	httpMode       bool
 	pm             httpsproxy_types.ProcessManagerInterface
 	packageManager *packages.PackageManager
 	server         *http.Server
@@ -56,6 +57,7 @@ func NewProxy(
 	certFile,
 	keyFile,
 	internalSecret string,
+	httpMode bool,
 	pm httpsproxy_types.ProcessManagerInterface,
 	packageManager *packages.PackageManager,
 	eventManager *events.EventManager,
@@ -79,6 +81,7 @@ func NewProxy(
 		host:           host,
 		certFile:       certFile,
 		keyFile:        keyFile,
+		httpMode:       httpMode,
 		pm:             pm,
 		packageManager: packageManager,
 		transport:      transport,
@@ -89,27 +92,33 @@ func NewProxy(
 }
 
 func (p *Proxy) Start(contextFn func(net.Listener) context.Context) error {
-	// Load TLS certificates
-	cert, err := tls.LoadX509KeyPair(p.certFile, p.keyFile)
-	if err != nil {
-		log.Printf("Error loading TLS certificate: %v", err)
-		return err // Return error instead of panic to allow main to handle
-	}
-
 	p.server = &http.Server{
-		BaseContext: contextFn,
-		Addr:        p.listenAddr,
-		Handler:     http.HandlerFunc(p.handleRequest),
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		},
+		BaseContext:  contextFn,
+		Addr:         p.listenAddr,
+		Handler:      http.HandlerFunc(p.handleRequest),
 		ReadTimeout:  60 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	log.Printf("Starting HTTPS proxy server on %s", p.listenAddr)
-	return p.server.ListenAndServeTLS("", "") // Cert and key are in TLSConfig
+	if p.httpMode {
+		log.Printf("Starting HTTP proxy server on %s", p.listenAddr)
+		return p.server.ListenAndServe()
+	} else {
+		// Load TLS certificates
+		cert, err := tls.LoadX509KeyPair(p.certFile, p.keyFile)
+		if err != nil {
+			log.Printf("Error loading TLS certificate: %v", err)
+			return err // Return error instead of panic to allow main to handle
+		}
+
+		p.server.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+		}
+
+		log.Printf("Starting HTTPS proxy server on %s", p.listenAddr)
+		return p.server.ListenAndServeTLS("", "") // Cert and key are in TLSConfig
+	}
 }
 
 // handleRequest is the HTTP handler function for the proxy.

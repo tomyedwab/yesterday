@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -26,9 +27,14 @@ import (
 )
 
 func main() {
+	// Parse command line flags
+	var httpMode = flag.Bool("http", false, "Run proxy in HTTP mode instead of HTTPS")
+	var port = flag.String("port", "8443", "Port to listen on")
+	flag.Parse()
+
 	var httpProxy *httpsproxy.Proxy // Declare proxy variable for access in shutdown handler
 
-	proxyListenAddr := ":8443"
+	proxyListenAddr := ":" + *port
 	internalSecret := uuid.New().String()
 	hostName := fmt.Sprintf("www.yesterday.localhost%s", proxyListenAddr)
 
@@ -121,14 +127,30 @@ func main() {
 
 		// Initiate proxy shutdown first
 		if httpProxy != nil {
-			logger.Info("Attempting to stop HTTPS Proxy server...")
-			if err := httpProxy.Stop(); err != nil {
-				logger.Error("Error stopping HTTPS Proxy server", "error", err)
+			if *httpMode {
+				logger.Info("Attempting to stop HTTP Proxy server...")
 			} else {
-				logger.Info("HTTPS Proxy server stopped gracefully.")
+				logger.Info("Attempting to stop HTTPS Proxy server...")
+			}
+			if err := httpProxy.Stop(); err != nil {
+				if *httpMode {
+					logger.Error("Error stopping HTTP Proxy server", "error", err)
+				} else {
+					logger.Error("Error stopping HTTPS Proxy server", "error", err)
+				}
+			} else {
+				if *httpMode {
+					logger.Info("HTTP Proxy server stopped gracefully.")
+				} else {
+					logger.Info("HTTPS Proxy server stopped gracefully.")
+				}
 			}
 		} else {
-			logger.Info("HTTPS Proxy was not initialized, skipping stop.")
+			if *httpMode {
+				logger.Info("HTTP Proxy was not initialized, skipping stop.")
+			} else {
+				logger.Info("HTTPS Proxy was not initialized, skipping stop.")
+			}
 		}
 
 		// Initiate process manager shutdown
@@ -156,7 +178,11 @@ func main() {
 	}
 	proxyCertFile := fmt.Sprintf("%s/server.crt", certsDir)
 	proxyKeyFile := fmt.Sprintf("%s/server.key", certsDir)
-	logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
+	if *httpMode {
+		logger.Info("Attempting to configure HTTP Proxy", "listenAddr", proxyListenAddr)
+	} else {
+		logger.Info("Attempting to configure HTTPS Proxy", "listenAddr", proxyListenAddr, "certFile", proxyCertFile, "keyFile", proxyKeyFile)
+	}
 
 	// httpProxy is declared at the top of main for access in the shutdown handler
 	httpProxy = httpsproxy.NewProxy(
@@ -165,6 +191,7 @@ func main() {
 		proxyCertFile,
 		proxyKeyFile,
 		internalSecret,
+		*httpMode,
 		processManager,
 		packageManager,
 		eventManager)
@@ -173,15 +200,27 @@ func main() {
 		return context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)
 	}
 
-	// 7. Start the HTTPS Proxy server in a goroutine
+	// 7. Start the Proxy server in a goroutine
 	go func() {
-		logger.Info("Starting HTTPS Proxy server...", "address", proxyListenAddr)
+		if *httpMode {
+			logger.Info("Starting HTTP Proxy server...", "address", proxyListenAddr)
+		} else {
+			logger.Info("Starting HTTPS Proxy server...", "address", proxyListenAddr)
+		}
 		if err := httpProxy.Start(contextFn); err != nil && err != http.ErrServerClosed {
-			logger.Error("HTTPS Proxy server failed to start or unexpectedly stopped", "error", err)
+			if *httpMode {
+				logger.Error("HTTP Proxy server failed to start or unexpectedly stopped", "error", err)
+			} else {
+				logger.Error("HTTPS Proxy server failed to start or unexpectedly stopped", "error", err)
+			}
 			// Consider a more robust way to signal main application failure if proxy is critical
 			// For example, by closing a channel that main select{}s on, or calling sigChan <- syscall.SIGTERM
 		} else if err == http.ErrServerClosed {
-			logger.Info("HTTPS Proxy server closed.")
+			if *httpMode {
+				logger.Info("HTTP Proxy server closed.")
+			} else {
+				logger.Info("HTTPS Proxy server closed.")
+			}
 		}
 	}()
 

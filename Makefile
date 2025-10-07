@@ -57,12 +57,12 @@ serve: dist/certs/server.crt
 		PKG_DIR=$(PWD)/build/pkg \
 		CERTS_DIR=$(PWD)/dist/certs \
 		INSTALL_DIR=$(PWD)/dist/install \
-		./build/nexushub/nexushub | hl -F -h component -h pid; \
+		./build/nexushub/nexushub $(ARGS) | hl -F -h component -h pid; \
 	else \
     	PKG_DIR=$(PWD)/build/pkg \
     	CERTS_DIR=$(PWD)/dist/certs \
     	INSTALL_DIR=$(PWD)/dist/install \
-		./build/nexushub/nexushub; \
+		./build/nexushub/nexushub $(ARGS); \
 	fi
 
 deploy:

@@ -10,11 +10,13 @@ import (
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	"github.com/tomyedwab/yesterday/apps/admin/types"
+	"github.com/tomyedwab/yesterday/nexushub/audit"
 	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
 func HandleLogin(w http.ResponseWriter, r *http.Request, adminServiceHost string) {
 	sessionManager := r.Context().Value(sessions.SessionManagerKey).(*sessions.SessionManager)
+	auditLogger := r.Context().Value(audit.AuditLoggerKey).(*audit.Logger)
 	var err error
 	body, _ := io.ReadAll(r.Body)
 
@@ -54,6 +56,12 @@ func HandleLogin(w http.ResponseWriter, r *http.Request, adminServiceHost string
 	// Strip port number if it's in the host string
 	if strings.Contains(domain, ":") {
 		domain = strings.Split(domain, ":")[0]
+	}
+
+	// Log successful login
+	if err := auditLogger.LogLogin(loginResponse.UserID, session.RefreshToken); err != nil {
+		// Log the error but don't fail the request
+		fmt.Printf("Failed to log login audit event: %v\n", err)
 	}
 
 	w.Header().Set("Set-Cookie", "YRT="+session.RefreshToken+"; Path=/; Domain="+domain+"; HttpOnly; Secure; SameSite=None")

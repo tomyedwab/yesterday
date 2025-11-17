@@ -10,12 +10,14 @@ import (
 
 	"github.com/tomyedwab/yesterday/applib/httputils"
 	admin_types "github.com/tomyedwab/yesterday/apps/admin/types"
+	"github.com/tomyedwab/yesterday/nexushub/audit"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	"github.com/tomyedwab/yesterday/nexushub/sessions"
 )
 
 func HandleAccessToken(w http.ResponseWriter, r *http.Request, adminServiceHost string) {
 	sessionManager := r.Context().Value(sessions.SessionManagerKey).(*sessions.SessionManager)
+	auditLogger := r.Context().Value(audit.AuditLoggerKey).(*audit.Logger)
 
 	// Get refresh token from cookie
 	refreshToken, err := r.Cookie("YRT")
@@ -24,8 +26,13 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, adminServiceHost 
 		return
 	}
 
-	session, err := sessionManager.GetSessionByRefreshToken(refreshToken.Value)
+	oldRefreshToken := refreshToken.Value
+	session, err := sessionManager.GetSessionByRefreshToken(oldRefreshToken)
 	if err != nil || session == nil {
+		// Log invalid refresh token attempt
+		if auditErr := auditLogger.LogInvalidRefreshToken(oldRefreshToken); auditErr != nil {
+			fmt.Printf("Failed to log invalid refresh token audit event: %v\n", auditErr)
+		}
 		httputils.HandleAPIResponse(w, r, nil, fmt.Errorf("refresh token not found"), http.StatusForbidden)
 		return
 	}
@@ -58,11 +65,24 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, adminServiceHost 
 
 	response, err := sessionManager.CreateAccessToken(session)
 	if err != nil {
+		// Check if this is a session expiry error
+		if err == sessions.ErrSessionExpired {
+			// Log session expiry (invalid/expired refresh token)
+			if auditErr := auditLogger.LogInvalidRefreshToken(oldRefreshToken); auditErr != nil {
+				fmt.Printf("Failed to log invalid refresh token audit event: %v\n", auditErr)
+			}
+		}
 		httputils.HandleAPIResponse(w, r, nil, err, http.StatusUnauthorized)
 		return
 	}
 
 	access.CreateAccessToken(response)
+
+	// Log access token refresh
+	if err := auditLogger.LogAccessTokenRefresh(session.UserID, oldRefreshToken, response.RefreshToken, response.AccessToken); err != nil {
+		// Log the error but don't fail the request
+		fmt.Printf("Failed to log access token refresh audit event: %v\n", err)
+	}
 
 	// Set the cookie with the refresh token
 	targetDomain := r.Host

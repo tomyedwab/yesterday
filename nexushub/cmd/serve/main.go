@@ -19,6 +19,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/tomyedwab/yesterday/nexushub/audit"
 	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy"
 	"github.com/tomyedwab/yesterday/nexushub/packages"
@@ -51,8 +52,17 @@ func main() {
 	}
 	installDir := packageManager.GetInstallDir()
 
+	// 2. Initialize audit logger with database
+	auditDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "audit.db"))
+	auditLogger, err := audit.NewLogger(auditDatabase)
+	if err != nil {
+		logger.Error("Failed to initialize audit logger", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("Audit logger initialized")
+
 	sessionsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
-	sessionManager, err := sessions.NewManager(sessionsDatabase, 10*time.Minute, 1*time.Hour)
+	sessionManager, err := sessions.NewManager(sessionsDatabase, 15*time.Minute, 1*time.Hour)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -197,7 +207,9 @@ func main() {
 		eventManager)
 
 	contextFn := func(_ net.Listener) context.Context {
-		return context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)
+		ctx := context.WithValue(context.Background(), sessions.SessionManagerKey, sessionManager)
+		ctx = context.WithValue(ctx, audit.AuditLoggerKey, auditLogger)
+		return ctx
 	}
 
 	// 7. Start the Proxy server in a goroutine

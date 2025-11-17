@@ -1,8 +1,10 @@
 package access
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/tomyedwab/yesterday/nexushub/audit"
 	"github.com/tomyedwab/yesterday/nexushub/types"
 )
 
@@ -21,12 +23,18 @@ func CreateAccessToken(response *types.AccessTokenResponse) {
 	}
 }
 
-func ValidateAccessToken(token string) bool {
+func ValidateAccessToken(token string, auditLogger *audit.Logger) bool {
 	_, ok := AccessTokenStore[token]
 	if !ok {
 		return false
 	}
 	if time.Now().Unix() > AccessTokenStore[token].Expiry {
+		// Log access token expiry
+		if auditLogger != nil {
+			if err := auditLogger.LogAccessTokenExpiry(token); err != nil {
+				fmt.Printf("Failed to log access token expiry audit event: %v\n", err)
+			}
+		}
 		delete(AccessTokenStore, token)
 		return false
 	}

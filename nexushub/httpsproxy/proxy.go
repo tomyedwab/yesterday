@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tomyedwab/yesterday/nexushub/audit"
 	"github.com/tomyedwab/yesterday/nexushub/events"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/access"
 	"github.com/tomyedwab/yesterday/nexushub/httpsproxy/middleware"
@@ -215,7 +216,12 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 		valid := token == p.internalSecret
 		if !valid {
-			valid = access.ValidateAccessToken(token)
+			// Get audit logger from context (may be nil if not set)
+			var auditLogger *audit.Logger
+			if al := r.Context().Value(audit.AuditLoggerKey); al != nil {
+				auditLogger = al.(*audit.Logger)
+			}
+			valid = access.ValidateAccessToken(token, auditLogger)
 		}
 		if !valid {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)

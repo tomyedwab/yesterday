@@ -25,6 +25,32 @@ The main service orchestrator resides in `nexushub/cmd/serve/main.go` and serves
 - Configure graceful shutdown signal handling for SIGINT and SIGTERM
 - Exit with appropriate error codes on initialization failures
 
+## Task `nexushub-audit-logging`: Audit Logging Infrastructure
+**Reference:** design/nexushub.md
+**Implementation status:** Completed (2025-11-16)
+**Files:** `nexushub/audit/logger.go`, `nexushub/audit/logger_test.go`, `nexushub/audit/README.md`, `nexushub/cmd/serve/main.go` (lines 55-62, 206-209), `nexushub/internal/handlers/login/*.go`
+
+**Details:**
+- ✅ Implemented SQLite-based audit logger for tracking authentication and authorization events
+- ✅ Database schema with audit_events table and indexes on timestamp, user_id, and event_type
+- ✅ Tracks the following events with timestamps, user IDs, and token fingerprints:
+  - Login events (user ID, refresh token fingerprint)
+  - Logout events (user ID, refresh token fingerprint)
+  - Access token refresh (user ID, old/new refresh token fingerprints, access token fingerprint)
+  - Access token expiry (access token fingerprint)
+  - Invalid/expired refresh token usage (refresh token fingerprint)
+- ✅ Uses SHA-256 token fingerprinting for security (tokens never stored in plain text)
+- ✅ Initialized in main.go with dedicated SQLite database (`audit.db`)
+- ✅ Added to request context via `audit.AuditLoggerKey` for access by HTTP handlers
+- ✅ Integrated into login handlers:
+  - `HandleLogin`: Logs successful login events
+  - `HandleLogout`: Logs logout and invalid refresh token attempts
+  - `HandleAccessToken`: Logs token refresh, invalid tokens, and expired sessions
+- ✅ Query methods for retrieving events by user, type, or time range
+- ✅ Cleanup method (`DeleteOldEvents`) for removing events older than specified duration
+- ✅ Comprehensive unit test coverage with 13 test cases including database operations
+- ✅ Full documentation in audit/README.md including database schema, usage examples, and security considerations
+
 ## Task `nexushub-static-apps`: Static Application Configuration
 **Reference:** design/nexushub.md
 **Implementation status:** Completed

@@ -24,14 +24,15 @@ const (
 
 // SessionManager handles the lifecycle of user sessions and refresh tokens.
 type SessionManager struct {
-	db            *sqlx.DB
-	accessExpiry  time.Duration // How long access tokens are valid
-	sessionExpiry time.Duration // How long sessions are valid
+	db                 *sqlx.DB
+	accessExpiry       time.Duration // How long access tokens are valid
+	sessionExpiry      time.Duration // How long sessions are valid
+	sessionReuseExpiry time.Duration // How long a session is valid after an access token is issued
 }
 
 // NewManager creates and initializes a new SessionManager.
 // It requires a SessionStore implementation and token durations.
-func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*SessionManager, error) {
+func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry, sessionReuseExpiry time.Duration) (*SessionManager, error) {
 	log.Printf("Initializing session manager")
 	err := DBInit(db)
 	if err != nil {
@@ -40,9 +41,10 @@ func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*S
 	log.Printf("Database initialized")
 
 	m := &SessionManager{
-		db:            db,
-		accessExpiry:  accessTokenExpiry,
-		sessionExpiry: sessionExpiry,
+		db:                 db,
+		accessExpiry:       accessTokenExpiry,
+		sessionExpiry:      sessionExpiry,
+		sessionReuseExpiry: sessionReuseExpiry,
 	}
 
 	log.Printf("SessionManager initialized")
@@ -51,7 +53,7 @@ func NewManager(db *sqlx.DB, accessTokenExpiry, sessionExpiry time.Duration) (*S
 }
 
 func (m *SessionManager) CreateSession(userID int) (*Session, error) {
-	session, err := NewSession(userID)
+	session, err := NewSession(userID, m.sessionExpiry)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +87,7 @@ func (m *SessionManager) DeleteExpiredSessions() error {
 // GetAccessToken creates a new access token which is stored in-memory in
 // NexusHub, and rotates the refresh token in the database.
 func (m *SessionManager) CreateAccessToken(session *Session) (*types.AccessTokenResponse, error) {
-	if time.Since(time.Unix(int64(session.LastRefreshed), 0)) > m.sessionExpiry {
+	if time.Since(time.Unix(int64(session.ExpiresAt), 0)) > 0 {
 		session.DBDelete(m.db)
 		return nil, ErrSessionExpired
 	}
@@ -94,7 +96,7 @@ func (m *SessionManager) CreateAccessToken(session *Session) (*types.AccessToken
 	expiresAt := time.Now().UTC().Add(m.accessExpiry).Unix()
 
 	// Update the session with the new refresh token
-	refreshToken, err := session.DBUpdateRefreshToken(m.db)
+	refreshToken, err := session.DBUpdateRefreshToken(m.db, m.sessionReuseExpiry, m.sessionExpiry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update session with new refresh token: %w", err)
 	}

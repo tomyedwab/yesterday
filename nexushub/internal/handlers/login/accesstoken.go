@@ -64,6 +64,7 @@ func HandleAccessToken(w http.ResponseWriter, r *http.Request, adminServiceHost 
 	}
 
 	response, err := sessionManager.CreateAccessToken(session)
+
 	if err != nil {
 		// Check if this is a session expiry error
 		if err == sessions.ErrSessionExpired {

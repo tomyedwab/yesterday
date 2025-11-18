@@ -62,7 +62,7 @@ func main() {
 	logger.Info("Audit logger initialized")
 
 	sessionsDatabase := sqlx.MustConnect("sqlite3", path.Join(installDir, "sessions.db"))
-	sessionManager, err := sessions.NewManager(sessionsDatabase, 15*time.Minute, 1*time.Hour)
+	sessionManager, err := sessions.NewManager(sessionsDatabase, 15*time.Minute, 24*30*time.Hour, 1*time.Minute)
 	if err != nil {
 		log.Fatal(err)
 	}

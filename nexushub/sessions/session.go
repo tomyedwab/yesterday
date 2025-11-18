@@ -2,8 +2,10 @@ package sessions
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql/driver"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
@@ -48,10 +50,11 @@ func (f FlexibleInt64) Int64() int64 {
 // Session represents an active user session.
 // Sessions are stored in the database and referenced by their ID.
 type Session struct {
-	RefreshToken  string        `json:"refresh_token" db:"refresh_token"` // The refresh token
-	UserID        int           `json:"user_id" db:"user_id"`
-	CreatedAt     FlexibleInt64 `json:"created_at" db:"created_at"`
-	LastRefreshed FlexibleInt64 `json:"last_refreshed" db:"last_refreshed"` // Timestamp of the last refresh token issuance
+	RefreshToken            string        `json:"refresh_token" db:"refresh_token"`                         // The refresh token
+	RefreshTokenFingerprint string        `json:"refresh_token_fingerprint" db:"refresh_token_fingerprint"` // The fingerprint of the refresh token
+	UserID                  int           `json:"user_id" db:"user_id"`
+	CreatedAt               FlexibleInt64 `json:"created_at" db:"created_at"`
+	ExpiresAt               FlexibleInt64 `json:"expires_at" db:"expires_at"` // Timestamp of the last refresh token issuance
 }
 
 // generateRandomID generates a cryptographically secure random string encoded in base64.
@@ -70,17 +73,17 @@ func generateRandomID(length int) (string, error) {
 }
 
 // NewSession creates a new session instance with a unique ID.
-func NewSession(userID int) (*Session, error) {
+func NewSession(userID int, sessionExpiry time.Duration) (*Session, error) {
 	refreshToken, err := generateRandomID(32)
 	if err != nil {
 		return nil, err
 	}
-	now := FlexibleInt64(time.Now().UTC().Unix())
+	now := time.Now().UTC()
 	return &Session{
-		RefreshToken:  refreshToken,
-		UserID:        userID,
-		CreatedAt:     now,
-		LastRefreshed: now,
+		RefreshToken: refreshToken,
+		UserID:       userID,
+		CreatedAt:    FlexibleInt64(now.Unix()),
+		ExpiresAt:    FlexibleInt64(now.Add(sessionExpiry).Unix()),
 	}, nil
 }
 
@@ -90,9 +93,10 @@ func DBInit(db *sqlx.DB) error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS sessions (
 		refresh_token TEXT PRIMARY KEY,
+		refresh_token_fingerprint TEXT NOT NULL,
 		user_id INTEGER NOT NULL,
 		created_at INTEGER NOT NULL,
-		last_refreshed INTEGER NOT NULL
+		expires_at INTEGER NOT NULL
 	)
 	`)
 	return err
@@ -106,20 +110,27 @@ func DBGetSessionByRefreshToken(db *sqlx.DB, refreshToken string) (*Session, err
 
 func (s *Session) DBCreate(db *sqlx.DB) error {
 	fmt.Printf("Creating session for user %d\n", s.UserID)
-	_, err := db.Exec("INSERT INTO sessions (refresh_token, user_id, created_at, last_refreshed) VALUES ($1, $2, $3, $4)", s.RefreshToken, s.UserID, s.CreatedAt, s.LastRefreshed)
+	hash := sha256.Sum256([]byte(s.RefreshToken))
+	fingerprint := hex.EncodeToString(hash[:])
+	_, err := db.Exec("INSERT INTO sessions (refresh_token, refresh_token_fingerprint, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4, $5)", s.RefreshToken, fingerprint, s.UserID, s.CreatedAt, s.ExpiresAt)
 	return err
 }
 
-func (s *Session) DBUpdateRefreshToken(db *sqlx.DB) (string, error) {
+func (s *Session) DBUpdateRefreshToken(db *sqlx.DB, oldSessionExpiry, newSessionExpiry time.Duration) (string, error) {
 	fmt.Printf("Updating refresh token for user %d\n", s.UserID)
-	refreshToken, err := generateRandomID(32)
+	newSession, err := NewSession(s.UserID, newSessionExpiry)
 	if err != nil {
 		return "", err
 	}
-	s.LastRefreshed = FlexibleInt64(time.Now().UTC().Unix())
-	_, err = db.Exec("UPDATE sessions SET refresh_token = $1, last_refreshed = $2 WHERE refresh_token = $3", refreshToken, s.LastRefreshed, s.RefreshToken)
-	s.RefreshToken = refreshToken
-	return refreshToken, err
+	err = newSession.DBCreate(db)
+	if err != nil {
+		return "", err
+	}
+
+	s.ExpiresAt = FlexibleInt64(time.Now().UTC().Add(oldSessionExpiry).Unix())
+	_, err = db.Exec("UPDATE sessions SET expires_at = $1 WHERE refresh_token = $2", s.ExpiresAt, s.RefreshToken)
+
+	return newSession.RefreshToken, err
 }
 
 func (s *Session) DBDelete(db *sqlx.DB) error {
@@ -129,7 +140,7 @@ func (s *Session) DBDelete(db *sqlx.DB) error {
 
 func DBDeleteExpiredSessions(db *sqlx.DB, sessionExpiry time.Duration) error {
 	// Delete sessions that have expired
-	_, err := db.Exec("DELETE FROM sessions WHERE last_refreshed < $1", FlexibleInt64(time.Now().UTC().Add(-sessionExpiry).Unix()))
+	_, err := db.Exec("DELETE FROM sessions WHERE expires_at < UNIXEPOCH()")
 	if err != nil {
 		return err
 	}
